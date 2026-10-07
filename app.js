@@ -7671,7 +7671,8 @@ function switchTab(name) {
   dList.hidden = true;
   oList.hidden = true;
   // the outline's cards, their List/Cards switch and their hint belong to the Outline alone
-  for (const id of ['#outline-board', '#outline-views', '#outline-board-hint', '#darling-views']) { const el = $(id); if (el) el.hidden = true; }
+  for (const id of ['#outline-board', '#outline-views', '#outline-board-hint', '#darling-views', '#notes-board', '#notes-views', '#note-bar']) { const el = $(id); if (el) el.hidden = true; }
+  $('#aux-title').hidden = false;
 
   if (name === 'darlings') {
     $('#aux-title').textContent = t('Darlings');
@@ -7686,6 +7687,8 @@ function switchTab(name) {
     renderOutline();
     returnTo();
     findHere();
+  } else if (name === 'notes') {
+    showNotes();
   } else {
     $('#aux-title').textContent = tabName(name);
     auxEditor.hidden = false;
@@ -7715,6 +7718,290 @@ function switchTab(name) {
       toast(t('NEO couldn’t read this page from disk'));
     });
   }
+}
+
+/* ================================================================== */
+/*  NOTES AS CARDS                                                     */
+/*  Each note is a page of its own (ncard-<id>.html beside the book),  */
+/*  and notecards.json lists them: title, a few words to show on the   */
+/*  card, when it was last written. A book's old single Notes page     */
+/*  becomes the first card the first time Notes opens; its file is    */
+/*  left where it was. A note that's deleted goes to Darlings.         */
+/* ================================================================== */
+
+let noteCards = null;       // [{ id, title, preview, words, created, modified }]
+let noteCardsBook = null;
+let noteOpen = null;        // the card being written, or null at the overview
+const noteFile = (id) => 'ncard-' + id;
+const newNoteId = () => 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+const noteTitle = (c) => c.title || t('Untitled note');
+
+async function ensureNoteCards(bookId) {
+  if (noteCards && noteCardsBook === bookId) return;
+  let list = await window.neo.readJSON(bookId, 'notecards', null);
+  if (!Array.isArray(list)) {
+    list = [];
+    // the page Notes used to be, kept as the first card
+    const pending = auxPending[bookId + '/notes'];
+    const html = pending ? pending.html : await window.neo.readAux(bookId, 'notes');
+    const holder = document.createElement('div');
+    holder.innerHTML = html || '';
+    const text = holder.innerText.trim();
+    if (text) {
+      const id = newNoteId();
+      await window.neo.writeAux(bookId, noteFile(id), html);
+      const now = new Date().toISOString();
+      list.push({ id, title: t('Notes'), preview: text.replace(/\s+/g, ' ').slice(0, 220), words: countWords(text), created: now, modified: now });
+    }
+    await writeSidecar(bookId, 'notecards', list);
+  }
+  noteCards = list;
+  noteCardsBook = bookId;
+}
+const saveNoteCards = () => writeSidecar(noteCardsBook, 'notecards', noteCards).catch(() => {});
+
+// what the open note says, kept on its card for the overview
+function noteCommit() {
+  const ed = $('#aux-editor');
+  if (!noteOpen || !noteCards || !ed.dataset.kind.startsWith('ncard-')) return;
+  const card = noteCards.find((c) => c.id === noteOpen);
+  if (!card) return;
+  const text = ed.innerText.trim();
+  const preview = text.replace(/\s+/g, ' ').slice(0, 220);
+  if (card.preview === preview) return;
+  card.preview = preview;
+  card.words = countWords(text);
+  card.modified = new Date().toISOString();
+  saveNoteCards();
+}
+
+function notesViewSwitch() {
+  let sw = $('#notes-views');
+  if (sw) return sw;
+  sw = document.createElement('div');
+  sw.id = 'notes-views';
+  sw.setAttribute('role', 'group');
+  sw.setAttribute('aria-label', t('Notes view'));
+  for (const [value, label] of [['list', t('List')], ['cards', t('Cards')]]) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.view = value;
+    b.textContent = label;
+    b.onclick = () => {
+      if ((library.notesView || 'cards') === value) return;
+      library.notesView = value;
+      writeLibrary(library);
+      renderNoteOverview();
+    };
+    sw.appendChild(b);
+  }
+  $('#aux-title').after(sw);
+  return sw;
+}
+
+function noteBar() {
+  let bar = $('#note-bar');
+  if (bar) return bar;
+  bar = document.createElement('div');
+  bar.id = 'note-bar';
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'nb-back';
+  back.textContent = '‹ ' + t('All notes');
+  back.onclick = () => closeNote();
+  const title = document.createElement('span');
+  title.className = 'nb-title';
+  title.contentEditable = 'true';
+  title.spellcheck = false;
+  title.setAttribute('role', 'textbox');
+  title.setAttribute('aria-label', t('Note title'));
+  title.dataset.ph = t('Untitled note');
+  title.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) { e.stopPropagation(); return; }
+    if (e.key === 'Enter') { e.preventDefault(); $('#aux-editor').focus(); }
+    e.stopPropagation();
+  });
+  title.addEventListener('blur', () => {
+    const card = noteCards && noteCards.find((c) => c.id === noteOpen);
+    if (!card) return;
+    const val = title.textContent.replace(/\s+/g, ' ').trim();
+    if (card.title === val) return;
+    card.title = val;
+    saveNoteCards();
+  });
+  title.addEventListener('paste', (e) => {
+    e.preventDefault();
+    document.execCommand('insertText', false, (e.clipboardData.getData('text/plain') || '').replace(/\s+/g, ' '));
+  });
+  bar.append(back, title);
+  $('#aux-title').after(bar);
+  return bar;
+}
+
+function noteBoard() {
+  let board = $('#notes-board');
+  if (board) return board;
+  board = document.createElement('div');
+  board.id = 'notes-board';
+  board.setAttribute('role', 'list');
+  board.setAttribute('aria-label', t('Notes'));
+  $('#aux-editor').before(board);
+  return board;
+}
+
+async function showNotes() {
+  const bookId = book.id;
+  const load = ++auxLoad;
+  $('#aux-title').textContent = tabName('notes');
+  const ed = $('#aux-editor');
+  ed.hidden = true;
+  ed.contentEditable = 'false';
+  ed.dataset.kind = '';
+  ed.dataset.book = '';
+  noteOpen = null;
+  try { await ensureNoteCards(bookId); } catch (err) {
+    window.neo.logError('notes read: ' + (err && err.message || err));
+    toast(t('NEO couldn’t read this page from disk'));
+    return;
+  }
+  if (load !== auxLoad || !book || book.id !== bookId || currentTab !== 'notes') return;
+  renderNoteOverview();
+}
+
+function renderNoteOverview() {
+  const board = noteBoard();
+  const sw = notesViewSwitch();
+  const view = library.notesView === 'list' ? 'list' : 'cards';
+  noteBar().hidden = true;
+  $('#aux-title').hidden = false;
+  $('#aux-editor').hidden = true;
+  board.hidden = false;
+  sw.hidden = false;
+  for (const b of sw.querySelectorAll('button')) {
+    b.classList.toggle('on', b.dataset.view === view);
+    b.setAttribute('aria-pressed', b.dataset.view === view ? 'true' : 'false');
+  }
+  board.innerHTML = '';
+  board.className = view === 'cards' ? 'as-cards' : 'as-list';
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'nc-new';
+  add.textContent = '+ ' + t('New note');
+  add.onclick = () => newNote();
+  board.appendChild(add);
+  // newest writing first
+  const sorted = [...noteCards].sort((x, y) => (y.modified || '').localeCompare(x.modified || ''));
+  for (const c of sorted) {
+    const el = document.createElement('div');
+    el.className = 'nc-card';
+    el.dataset.id = c.id;
+    el.tabIndex = 0;
+    el.setAttribute('role', 'listitem');
+    const title = document.createElement('div');
+    title.className = 'nc-title';
+    title.textContent = noteTitle(c);
+    if (!c.title) title.classList.add('untitled');
+    const prev = document.createElement('div');
+    prev.className = 'nc-prev';
+    prev.textContent = c.preview || t('Empty');
+    const meta = document.createElement('div');
+    meta.className = 'nc-meta';
+    meta.textContent = [c.words ? t('{n} words', { n: c.words.toLocaleString() }) : '', c.modified ? fmtDate(c.modified) : ''].filter(Boolean).join(' · ');
+    el.append(title, prev, meta);
+    el.addEventListener('click', () => openNote(c.id));
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter') openNote(c.id); });
+    el.addEventListener('contextmenu', async (e) => {
+      e.preventDefault();
+      const v = await popMenu(e.clientX, e.clientY, [
+        { label: t('Open'), value: 'open' },
+        '-',
+        { label: t('Delete — it goes to Darlings'), value: 'delete', danger: true }
+      ], { from: el });
+      if (v === 'open') openNote(c.id);
+      else if (v === 'delete') deleteNote(c.id);
+    });
+    board.appendChild(el);
+  }
+}
+
+async function openNote(id) {
+  const card = noteCards && noteCards.find((c) => c.id === id);
+  if (!card || !book) return;
+  const bookId = book.id;
+  const load = ++auxLoad;
+  flushAux();
+  const kind = noteFile(id);
+  const pending = auxPending[bookId + '/' + kind];
+  let html = '';
+  try { html = pending ? pending.html : await window.neo.readAux(bookId, kind); } catch (err) {
+    window.neo.logError('notes read: ' + (err && err.message || err));
+    toast(t('NEO couldn’t read this page from disk'));
+    return;
+  }
+  if (load !== auxLoad || !book || book.id !== bookId || currentTab !== 'notes') return;
+  noteOpen = id;
+  $('#notes-board').hidden = true;
+  $('#notes-views').hidden = true;
+  $('#aux-title').hidden = true;
+  const bar = noteBar();
+  bar.hidden = false;
+  bar.querySelector('.nb-title').textContent = card.title || '';
+  const ed = $('#aux-editor');
+  ed.hidden = false;
+  ed.innerHTML = html || '';
+  ed.dataset.kind = kind;
+  ed.dataset.book = bookId;
+  ed.contentEditable = 'true';
+  ed.focus({ preventScroll: true });
+  vimRest();
+}
+
+function closeNote() {
+  noteCommit();
+  flushAux();
+  noteOpen = null;
+  const ed = $('#aux-editor');
+  ed.hidden = true;
+  ed.dataset.kind = '';
+  ed.dataset.book = '';
+  renderNoteOverview();
+}
+
+function newNote() {
+  const now = new Date().toISOString();
+  const card = { id: newNoteId(), title: '', preview: '', words: 0, created: now, modified: now };
+  noteCards.push(card);
+  window.neo.writeAux(noteCardsBook, noteFile(card.id), '').catch(() => {});
+  saveNoteCards();
+  openNote(card.id).then(() => $('#note-bar .nb-title').focus());
+}
+
+// a deleted note keeps its words: Darlings holds them, and Restore isn't
+// needed to read them there
+async function deleteNote(id) {
+  const card = noteCards.find((c) => c.id === id);
+  if (!card) return;
+  const kind = noteFile(id);
+  const pending = auxPending[noteCardsBook + '/' + kind];
+  const html = pending ? pending.html : await window.neo.readAux(noteCardsBook, kind);
+  const holder = document.createElement('div');
+  holder.innerHTML = html || '';
+  const text = holder.innerText.trim();
+  if (text) {
+    darlings.unshift({
+      id: 'd-' + Date.now().toString(36),
+      html: html || null,
+      text,
+      chapterId: null,
+      chapterLabel: t('Note: {title}', { title: noteTitle(card) }),
+      date: new Date().toISOString()
+    });
+    await writeSidecar(book.id, 'darlings', darlings);
+  }
+  noteCards = noteCards.filter((c) => c.id !== id);
+  await saveNoteCards();
+  renderNoteOverview();
+  toast(text ? t('Note deleted — its words are in Darlings') : t('Note deleted'));
 }
 
 /* ================================================================== */
@@ -9820,6 +10107,7 @@ function scheduleAuxSave() {
 // before then (not the older file).
 const auxPending = {};
 function flushAux() {
+  noteCommit();
   const ed = $('#aux-editor');
   if (auxDirty && ed.dataset.kind && ed.dataset.book) {
     const key = ed.dataset.book + '/' + ed.dataset.kind;

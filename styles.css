@@ -873,15 +873,15 @@ body.night .ol-part .ol-num, body.night .ol-part-name { color: #918b7d; }
 }
 
 /* --- Outline cards: the outline set like a page (app.js, OUTLINE CARDS) --- */
-#outline-views, #darling-views { display: flex; justify-content: center; gap: 2px; margin: -30px 0 24px; opacity: 0; transition: opacity 0.15s; }
-#aux-paper:hover #outline-views, #outline-views:focus-within, #aux-paper:hover #darling-views, #darling-views:focus-within { opacity: 1; }
-@media (hover: none) { #outline-views, #darling-views { opacity: 1; } }
-#outline-views button, #darling-views button {
+#outline-views, #darling-views, #notes-views { display: flex; justify-content: center; gap: 2px; margin: -30px 0 24px; opacity: 0; transition: opacity 0.15s; }
+#aux-paper:hover #outline-views, #outline-views:focus-within, #aux-paper:hover #darling-views, #darling-views:focus-within, #aux-paper:hover #notes-views, #notes-views:focus-within { opacity: 1; }
+@media (hover: none) { #outline-views, #darling-views, #notes-views { opacity: 1; } }
+#outline-views button, #darling-views button, #notes-views button {
   background: none; border: none; border-bottom: 2px solid transparent; padding: 4px 10px;
   font: 12px/1.4 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; letter-spacing: 1px;
   color: var(--muted); cursor: pointer;
 }
-#outline-views button.on, #darling-views button.on { color: var(--ink); border-bottom-color: var(--accent); }
+#outline-views button.on, #darling-views button.on, #notes-views button.on { color: var(--ink); border-bottom-color: var(--accent); }
 #editor-view.board-on #outline-views button.on { color: color-mix(in srgb, var(--accent) 35%, #e8e4da); }
 body.light #editor-view.board-on #outline-views button.on { color: #2b2926; }
 
@@ -1130,6 +1130,24 @@ body.focus-mode .walk-note { opacity: 0.6; }
 #darlings-list.as-cards .darling.open .d-body { max-height: none; -webkit-mask-image: none; mask-image: none; }
 #darlings-list.as-cards .d-body p { margin: 0 0 0.6em; text-indent: 0; }
 #darlings-list.as-cards .d-meta { flex-direction: column; align-items: flex-start; gap: 8px; }
+/* Notes as cards (or a list of them), and the bar over the one being written */
+#notes-board { margin-top: 8px; }
+#notes-board.as-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; align-items: start; }
+#notes-board.as-list { display: flex; flex-direction: column; gap: 10px; }
+#notes-board .nc-card { border: 1px solid #e3ddcf; border-left: 3px solid var(--accent); border-radius: 4px; padding: 12px 15px; background: #fffdf8; box-shadow: 0 1px 3px rgba(60,50,30,0.1); cursor: pointer; font-family: Georgia, serif; }
+#notes-board .nc-card:hover, #notes-board .nc-card:focus-visible { border-color: var(--accent); outline: none; }
+#notes-board .nc-title { font-size: 15px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
+#notes-board .nc-title.untitled { font-weight: 400; font-style: italic; color: #9a9486; }
+#notes-board .nc-prev { font-size: 13px; line-height: 1.45; color: #5d594f; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden; }
+#notes-board.as-list .nc-prev { -webkit-line-clamp: 2; }
+#notes-board .nc-meta { margin-top: 8px; font: 11px -apple-system, sans-serif; color: #999; }
+#notes-board .nc-new { font: 13px -apple-system, sans-serif; color: #9a9486; background: none; border: 1px dashed #cfc9bb; border-radius: 4px; padding: 14px; cursor: pointer; min-height: 56px; }
+#notes-board .nc-new:hover, #notes-board .nc-new:focus-visible { color: var(--accent); border-color: var(--accent); outline: none; }
+#note-bar { display: flex; align-items: baseline; gap: 14px; margin: 0 0 18px; font-family: -apple-system, sans-serif; }
+#note-bar .nb-back { background: none; border: none; color: var(--muted); font-size: 12px; letter-spacing: 1px; cursor: pointer; padding: 2px 0; white-space: nowrap; }
+#note-bar .nb-back:hover { color: var(--accent); }
+#note-bar .nb-title { flex: 1; font: 600 17px Georgia, serif; color: var(--ink); outline: none; min-width: 0; }
+#note-bar .nb-title:empty::before { content: attr(data-ph); color: #b9b4a8; font-weight: 400; font-style: italic; }
 .darlings-empty { text-align: center; color: #b9b4a8; font-style: italic; padding: 60px 0; }
 
 /* --- Left nav pane --- */
