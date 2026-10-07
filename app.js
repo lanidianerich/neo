@@ -6658,6 +6658,44 @@ function focusSticky(sid) {
 let chapterDragActive = false;
 let navRefreshPending = false;
 
+// Which parts and chapters are folded in the Chapters pane: a folded part hides
+// its chapters, a folded chapter hides its scenes. Kept for each book, on this device.
+const navFoldKey = () => 'neo.navFold.' + (book ? book.id : '');
+function navFold() {
+  try { return JSON.parse(localStorage.getItem(navFoldKey()) || '{}') || {}; } catch { return {}; }
+}
+function setNavFold(fold) {
+  try { localStorage.setItem(navFoldKey(), JSON.stringify(fold)); } catch { /* storage can be off */ }
+  renderNav();
+}
+async function navFoldMenu(x, y, from) {
+  if (!book) return;
+  const order = book.chapterOrder;
+  const parts = order.filter((c) => chapterKind(c) === 'part');
+  const withScenes = order.filter((c) => hasScenes(c) && visibleSegments(c).length);
+  const choice = await popMenu(x, y, [
+    { label: t('Show everything'), value: 'all' },
+    { label: t('Chapters only (fold the scenes)'), value: 'chapters' },
+    { label: t('Parts only'), value: 'parts', disabled: !parts.length },
+    '-',
+    { label: t('Only the chapter I’m in'), value: 'current' }
+  ], { from });
+  if (!choice) return;
+  const fold = {};
+  if (choice === 'chapters') for (const c of withScenes) fold[c] = true;
+  else if (choice === 'parts') for (const c of parts) fold[c] = true;
+  else if (choice === 'current') {
+    // the part that holds the chapter stays open; every other part and chapter folds
+    const at = order.indexOf(currentChapterId);
+    let own = null;
+    for (let i = at; i >= 0; i--) { if (chapterKind(order[i]) === 'part') { own = order[i]; break; } }
+    for (const c of parts) if (c !== own) fold[c] = true;
+    for (const c of withScenes) if (c !== currentChapterId) fold[c] = true;
+  }
+  setNavFold(fold);
+}
+$('#nav-fold').onclick = (e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); navFoldMenu(r.left, r.bottom + 4, e.currentTarget); };
+
 function renderNav() {
   if (!book) return; // a refresh queued just before the shelf came back
   // Replacing the source row during a native drag can interrupt its lifecycle.
@@ -6699,12 +6737,15 @@ function renderNav() {
     return g;
   };
   let inPart = false;
+  const fold = navFold();
+  let partFolded = false;
   book.chapterOrder.forEach((chId, i) => {
     const kind = chapterKind(chId);
     const story = STORY_KINDS.includes(kind);
     // a part gathers what follows it, up to the next part or the back of the book
-    if (kind === 'part') inPart = true;
-    else if (BACK_KINDS.includes(kind)) inPart = false;
+    if (kind === 'part') { inPart = true; partFolded = !!fold[chId]; }
+    else if (BACK_KINDS.includes(kind) || SPECIAL_KINDS.includes(kind)) { inPart = false; partFolded = false; }
+    const hidden = partFolded && kind !== 'part';
     const special = SPECIAL_KINDS.includes(kind);
     const words = story || special ? chapterWords(chId) : 0;
     const flagged = !!document.querySelector(`.chapter[data-id="${chId}"] .ph-mark`);
@@ -6713,7 +6754,10 @@ function renderNav() {
     item.className = `nav-item kind-${kind}` + (story || special ? '' : ' nav-page') + (inPart && kind !== 'part' && !special ? ' in-part' : '') +
       (chId === currentChapterId ? ' current' : '') + (chId === justAddedEntry ? ' just-added' : '');
     item.dataset.id = chId;
-    item.innerHTML = `<div class="n-row" title="${t('Drag to reorder chapters')}"><span class="n-label"></span>
+    item.hidden = hidden;
+    const sceneList = story || special ? visibleSegments(chId) : [];
+    const foldable = kind === 'part' || sceneList.length > 0;
+    item.innerHTML = `<div class="n-row" title="${t('Drag to reorder chapters')}">${foldable ? `<button class="n-fold" tabindex="-1" aria-label="${t('Fold or unfold')}" aria-expanded="${fold[chId] ? 'false' : 'true'}">${fold[chId] ? '&#9656;' : '&#9662;'}</button>` : ''}<span class="n-label"></span>
       <span style="display:flex;align-items:center">${story || special ? `<span class="n-words">${fmtNum(words)}</span>` : ''}${flagged ? `<span class="n-flag" title="${t('Unresolved placeholder')}"></span>` : ''}</span></div>`;
     item.querySelector('.n-label').textContent = chId === solo
       ? (book.title || t('The story'))
@@ -6773,7 +6817,16 @@ function renderNav() {
       item.appendChild(peek);
     }
 
-    if (story || special) {
+    if (foldable) {
+      item.querySelector('.n-fold').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const f = navFold();
+        if (f[chId]) delete f[chId]; else f[chId] = true;
+        setNavFold(f);
+      });
+      item.querySelector('.n-fold').addEventListener('mousedown', (e) => e.stopPropagation());
+    }
+    if ((story || special) && !fold[chId]) {
       const scenes = navScenes(chId);
       if (scenes) item.appendChild(scenes);
       else if (special) {
@@ -6802,7 +6855,9 @@ function renderNav() {
       story ? t('{n} words', { n: words }) : '',
       flagged ? t('Unresolved placeholder') : ''
     ].filter(Boolean).join(', '));
-    list.appendChild(gap(i));
+    const g = gap(i);
+    g.hidden = hidden;
+    list.appendChild(g);
     list.appendChild(item);
     if (chId === focusedRow) rowEl.focus({ preventScroll: true });
   });
