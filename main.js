@@ -26,6 +26,9 @@ const { Buffer } = require('buffer');
 
 // macOS Chromium's "smart delete" also removes whitespace around a deleted
 // selection, and that pass can duplicate characters. Deletes stay literal.
+// Lani's non-canon build: its own name, and so its own settings folder
+// (userData follows the app name), apart from the stock NEO
+if (fs.existsSync(path.join(__dirname, '.neo-nc'))) app.setName('Neo NC');
 app.commandLine.appendSwitch('blink-settings', 'smartInsertDeleteEnabled=false');
 // Linux: Chromium hears the system's voices (espeak, Piper, RHVoice…) only
 // through speech-dispatcher, and only when asked to. Without it Read Aloud
