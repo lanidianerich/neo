@@ -988,7 +988,7 @@ body.light .ob-card { box-shadow: 0 0 0 1px #d9d3c4, 0 3px 8px rgba(60,50,30,0.1
 /* the + on the seam after a card, and the card that ends the board */
 .ob-plus {
   position: absolute; right: -11px; top: 50%; transform: translateY(-50%); z-index: 3;
-  width: 22px; height: 22px; padding: 0; border-radius: 50%;
+  width: 22px; height: 22px; padding: 0 0 4px; text-indent: 4px; border-radius: 50%;
   border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); background: var(--bg);
   color: var(--accent); font: 15px/19px -apple-system, BlinkMacSystemFont, sans-serif; text-align: center;
   opacity: 0; transition: opacity 0.12s; cursor: pointer;

@@ -8058,7 +8058,7 @@ function cardCell(kind, chId) {
     plus.type = 'button';
     plus.className = 'ob-plus';
     plus.textContent = '+';
-    plus.title = kind === 'scene' ? t('New scene after this one') : t('New card after this one');
+    plus.title = t('Add scene');
     plus.setAttribute('aria-label', plus.title);
     plus.tabIndex = -1; // the keyboard has ⌥Enter
     plus.addEventListener('click', (e) => { e.stopPropagation(); if (!cell.dataset.new) newCardAfter(cell); });
@@ -8220,14 +8220,6 @@ function openCard(cell, { fresh = false } = {}) {
     go.onclick = () => { const c = cardEditor && cardEditor.cell; closeCardEditor(); if (c) goToCard(c); };
     tools.appendChild(go);
   }
-  if (cell.dataset.kind !== 'loose') {
-    const more = document.createElement('button');
-    more.type = 'button';
-    more.textContent = cell.dataset.kind === 'scene' ? t('New scene') : t('New card');
-    more.addEventListener('mousedown', (e) => e.preventDefault());
-    more.onclick = () => { const c = cardEditor && cardEditor.cell; if (c) newCardAfter(c); };
-    tools.appendChild(more);
-  }
   const tip = document.createElement('span');
   tip.textContent = t('Enter: done · Tab: next card · {key}: new card', { key: K('⌥Enter', 'Alt+Enter') });
   tools.appendChild(tip);
@@ -8360,16 +8352,15 @@ function saveCard(cell, val) {
 // after a card is set on the page, the chapter's cards learn their places
 // (and letters) again, without redrawing the board under the writer's hand
 function reindexChapterCards(chId) {
-  const segs = chapterSegments(chId);
-  const placed = visibleSegments(chId).map((v) => v.seg);
+  const placed = visibleSegments(chId);
   const cells = [...outlineBoard().querySelectorAll(`.ob-cell[data-kind="section"][data-ch="${chId}"]`)];
   let k = 0;
   let letter = 0;
   for (const cell of cells) {
     if (!cell.dataset.new) cell.querySelector('.ob-letter').textContent = secLetter(letter++);
     if (cell.dataset.new || cell.dataset.virtual) continue;
-    const seg = placed[k++];
-    if (seg) cell.dataset.seg = String(segs.indexOf(seg));
+    const at = placed[k++];
+    if (at) cell.dataset.seg = String(at.i);
   }
 }
 
@@ -8541,7 +8532,7 @@ function goToCard(cell) {
   switchTab('manuscript');
   if (cell.dataset.kind === 'chapter') {
     focusChapterStart(chId);
-    document.querySelector(`.chapter[data-id="${chId}"]`)?.scrollIntoView({ behavior: scrollBehavior(), block: 'start' });
+    document.querySelector(`.chapter[data-id="${chId}"]`)?.scrollIntoView({ behavior: 'auto', block: 'start' });
     return;
   }
   const seg = chapterSegments(chId)[Number(cell.dataset.seg)];
@@ -8557,7 +8548,9 @@ function goToCard(cell) {
   sel.addRange(r);
   currentChapterId = chId;
   highlightNav();
-  p.scrollIntoView({ behavior: scrollBehavior(), block: 'center' });
+  // a jump, not a glide: the page is a long way off, and a smooth scroll that far
+  // is cut short by the caret settling, which left the view somewhere in the chapter
+  p.scrollIntoView({ behavior: 'auto', block: 'center' });
 }
 
 async function cardMenu(cell, x, y) {
