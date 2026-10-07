@@ -988,7 +988,7 @@ body.light .ob-card { box-shadow: 0 0 0 1px #d9d3c4, 0 3px 8px rgba(60,50,30,0.1
 /* the + on the seam after a card, and the card that ends the board */
 .ob-plus {
   position: absolute; right: -11px; top: 50%; transform: translateY(-50%); z-index: 3;
-  width: 22px; height: 22px; padding: 0 0 4px; text-indent: 4px; border-radius: 50%;
+  width: 22px; height: 22px; padding: 0 0 4px; border-radius: 50%;
   border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); background: var(--bg);
   color: var(--accent); font: 15px/19px -apple-system, BlinkMacSystemFont, sans-serif; text-align: center;
   opacity: 0; transition: opacity 0.12s; cursor: pointer;
@@ -1202,6 +1202,23 @@ body.focus-mode .walk-note { opacity: 0.6; }
 .nav-gap.near .ng-plus { pointer-events: auto; }
 .nav-gap .ng-plus:hover { color: var(--accent); border-color: var(--accent); }
 /* the boxes: a page goes by its name, a part stands over what it gathers */
+/* the scenes of a chapter, listed under it in the Chapters pane */
+.nav-scenes { padding: 2px 0 2px 12px; }
+.nav-scene { display: flex; align-items: baseline; gap: 7px; padding: 3px 6px 3px 8px; margin: 1px 0; border-left: 1px solid #3a3a3a; font-size: 12px; line-height: 1.35; color: #8a8a8a; cursor: pointer; }
+.nav-scene:hover { background: #303030; color: #ddd; }
+.nav-scene .ns-letter { flex: none; font-size: 10px; font-weight: 600; color: var(--accent); width: 10px; }
+.nav-scene .ns-text { flex: 1; min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.nav-scene .ns-text.excerpt { color: #6c6c6c; }
+.nav-scene .ns-text.empty { color: #5a5a5a; font-style: italic; }
+.nav-scene .ns-words { flex: none; font-size: 10.5px; color: #5d5d5d; }
+.nav-scene.dragging { opacity: 0.4; }
+.nav-scene.drop-before { box-shadow: 0 -2px 0 var(--accent); }
+.nav-item.drop-end { box-shadow: inset 0 -2px 0 var(--accent); }
+body.bright .nav-scene { color: #a6a6a6; }
+body.bright .nav-scene .ns-text.excerpt { color: #8a8a8a; }
+body.bright .nav-scene .ns-words { color: #a6a6a6; }
+body.light .nav-scene { color: #5d594f; border-left-color: #cfc9bb; }
+body.light .nav-scene:hover { background: #ebe8e2; color: #1c1a17; }
 .nav-item.nav-page .n-label { font-size: 11px; letter-spacing: 1.6px; text-transform: uppercase; }
 .nav-item.kind-part .n-label { font-size: 11.5px; letter-spacing: 2.2px; text-transform: uppercase; }
 .nav-item.kind-part .n-row { color: #c9c2b2; }

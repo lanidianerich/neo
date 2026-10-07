@@ -6753,6 +6753,11 @@ function renderNav() {
       item.appendChild(peek);
     }
 
+    if (story) {
+      const scenes = navScenes(chId);
+      if (scenes) item.appendChild(scenes);
+    }
+
     item.onclick = () => {
       switchTab('manuscript');
       if (IS_POCKET) {
@@ -6779,6 +6784,94 @@ function renderNav() {
   justAddedEntry = null;
   renderContentsLists();
 }
+
+// The chapter's scenes, listed under it in the Chapters pane: one line each
+// (its note, or else its first words), a click goes there, and dragging one
+// onto another scene, or onto a chapter, moves the scene with its writing.
+function navScenes(chId) {
+  const scenes = visibleSegments(chId);
+  if (!scenes.length) return null;
+  const wrap = document.createElement('div');
+  wrap.className = 'nav-scenes';
+  scenes.forEach(({ seg, i }, k) => {
+    const note = seg.id ? sectionNote(chId, seg.id) : null;
+    const row = document.createElement('div');
+    row.className = 'nav-scene';
+    row.dataset.ch = chId;
+    row.dataset.seg = String(i);
+    const letter = document.createElement('span');
+    letter.className = 'ns-letter';
+    letter.textContent = secLetter(k);
+    const text = document.createElement('span');
+    text.className = 'ns-text';
+    if (note && note.text) text.textContent = note.text;
+    else if (seg.first) { text.textContent = quoted(seg.first); text.classList.add('excerpt'); }
+    else { text.textContent = t('What happens in this scene…'); text.classList.add('empty'); }
+    const words = document.createElement('span');
+    words.className = 'ns-words';
+    words.textContent = seg.words ? fmtNum(seg.words) : '';
+    row.append(letter, text, words);
+    pressable(row, t('Section {letter}', { letter: letter.textContent }) + '. ' + text.textContent);
+    row.addEventListener('click', (e) => {
+      e.stopPropagation();
+      switchTab('manuscript');
+      goToCard({ dataset: { kind: 'section', ch: chId, seg: String(i) } });
+      if (IS_POCKET && $('#nav-pane').dataset.pinned !== '1') $('#nav-pane').classList.remove('open');
+    });
+    if (!IS_POCKET) {
+      row.draggable = true;
+      row.addEventListener('dragstart', (e) => {
+        e.stopPropagation();
+        e.dataTransfer.setData('application/x-neo-scene', chId + '|' + i);
+        e.dataTransfer.effectAllowed = 'move';
+        chapterDragActive = true; // the pane holds still, and stays open, until the drop
+        $('#nav-pane').classList.add('open');
+        row.classList.add('dragging');
+      });
+      row.addEventListener('dragend', finishChapterDrag);
+    }
+    wrap.appendChild(row);
+  });
+  return wrap;
+}
+
+// where a dragged scene lands: before the scene it's dropped on, or at the
+// end of the chapter it's dropped on
+function wireSceneDrops() {
+  const list = $('#nav-list');
+  const clear = () => list.querySelectorAll('.drop-before, .drop-end').forEach((el) => el.classList.remove('drop-before', 'drop-end'));
+  const target = (e) => {
+    const row = e.target.closest && e.target.closest('.nav-scene');
+    if (row) return { ch: row.dataset.ch, before: Number(row.dataset.seg), el: row, cls: 'drop-before' };
+    const item = e.target.closest && e.target.closest('.nav-item:not(.nav-page)');
+    if (item) return { ch: item.dataset.id, before: null, el: item, cls: 'drop-end' };
+    return null;
+  };
+  list.addEventListener('dragover', (e) => {
+    if (!e.dataTransfer.types.includes('application/x-neo-scene')) return;
+    const to = target(e);
+    clear();
+    if (!to) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    to.el.classList.add(to.cls);
+  });
+  list.addEventListener('dragleave', (e) => { if (!list.contains(e.relatedTarget)) clear(); });
+  list.addEventListener('drop', (e) => {
+    const data = e.dataTransfer.getData('application/x-neo-scene');
+    if (!data) return;
+    e.preventDefault();
+    const to = target(e);
+    clear();
+    if (!to) return;
+    const [fromCh, fromSeg] = data.split('|');
+    closeCardEditor();
+    moveSection(fromCh, Number(fromSeg), { ch: to.ch, before: to.before });
+    navRefreshPending = true; // the pane redraws when the drag ends
+    if (currentTab === 'outline') renderOutline();
+  });
+}
+wireSceneDrops();
 
 // the first words of a page, for its box in the Chapters pane
 function entryPeek(chId) {
