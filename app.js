@@ -6645,7 +6645,7 @@ function renderNav() {
   if (chapterDragActive) { navRefreshPending = true; return; }
   // a chapter note being written in the pane isn't pulled out from under
   // the writer: the pane catches up when they leave the note
-  const editingNote = document.activeElement && document.activeElement.closest && document.activeElement.closest('#nav-list .nav-note[contenteditable="true"]');
+  const editingNote = document.activeElement && document.activeElement.closest && document.activeElement.closest('#nav-list .nav-note[contenteditable="true"], #nav-list .ns-text[contenteditable="true"]');
   if (editingNote) {
     navRefreshPending = true;
     if (!editingNote.dataset.catchUp) {
@@ -6799,6 +6799,7 @@ function navScenes(chId) {
     row.className = 'nav-scene';
     row.dataset.ch = chId;
     row.dataset.seg = String(i);
+    if (seg.id) row.dataset.sec = seg.id;
     const letter = document.createElement('span');
     letter.className = 'ns-letter';
     letter.textContent = secLetter(k);
@@ -6812,8 +6813,10 @@ function navScenes(chId) {
     words.textContent = seg.words ? fmtNum(seg.words) : '';
     row.append(letter, text, words);
     pressable(row, t('Section {letter}', { letter: letter.textContent }) + '. ' + text.textContent);
+    row.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); editNavScene(row); });
     row.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (row.classList.contains('editing')) return;
       switchTab('manuscript');
       goToCard({ dataset: { kind: 'section', ch: chId, seg: String(i) } });
       if (IS_POCKET && $('#nav-pane').dataset.pinned !== '1') $('#nav-pane').classList.remove('open');
@@ -6822,7 +6825,7 @@ function navScenes(chId) {
       row.draggable = true;
       row.addEventListener('dragstart', (e) => {
         e.stopPropagation();
-        e.dataTransfer.setData('application/x-neo-scene', chId + '|' + i);
+        e.dataTransfer.setData('application/x-neo-bookscene', chId + '|' + i);
         e.dataTransfer.effectAllowed = 'move';
         chapterDragActive = true; // the pane holds still, and stays open, until the drop
         $('#nav-pane').classList.add('open');
@@ -6833,6 +6836,102 @@ function navScenes(chId) {
     wrap.appendChild(row);
   });
   return wrap;
+}
+
+// Write a scene's note right in the Chapters pane (double-click it). Enter or
+// leaving the line keeps it, Esc puts it back. A scene just added from the +
+// that's left blank goes away again.
+function editNavScene(row, { fresh = false } = {}) {
+  if (row.classList.contains('editing')) return;
+  const chId = row.dataset.ch;
+  const segIdx = Number(row.dataset.seg);
+  const text = row.querySelector('.ns-text');
+  const seg = chapterSegments(chId)[segIdx];
+  const note = seg && seg.id ? sectionNote(chId, seg.id) : null;
+  const before = note ? note.text : '';
+  const secId = seg && seg.id ? seg.id : '';
+  closeCardEditor();
+  row.classList.add('editing');
+  row.draggable = false;
+  text.classList.remove('excerpt', 'empty');
+  text.textContent = before;
+  text.dataset.ph = t('What happens in this scene…');
+  text.contentEditable = 'true';
+  text.spellcheck = false;
+  text.setAttribute('role', 'textbox');
+  text.focus();
+  const range = document.createRange();
+  range.selectNodeContents(text);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  let finished = false;
+  let cancelled = false;
+  // other handlers take Esc and move the focus off the line before it
+  // reaches it, so Esc is noticed here first, and the blur that follows is a cancel
+  const esc = (e) => { if (e.key === 'Escape') cancelled = true; };
+  document.addEventListener('keydown', esc, true);
+  const finish = (keep) => {
+    if (finished) return;
+    finished = true;
+    document.removeEventListener('keydown', esc, true);
+    text.removeEventListener('keydown', keys);
+    text.removeEventListener('blur', onBlur);
+    text.contentEditable = 'false';
+    text.removeAttribute('role');
+    row.classList.remove('editing');
+    const val = text.textContent.replace(/\s+/g, ' ').trim();
+    if (keep && fresh && !val) {
+      // a scene made from the + and given no words: it was never a scene
+      book.sectionNotes[chId] = (book.sectionNotes[chId] || []).filter((s) => s.id !== secId);
+      syncGhosts(chId);
+      scheduleMetaSave();
+    } else if (keep && val !== before) {
+      saveCard({ dataset: { ch: chId, kind: 'section', sec: secId, seg: String(segIdx) } }, val);
+    } else if (!keep && fresh) {
+      book.sectionNotes[chId] = (book.sectionNotes[chId] || []).filter((s) => s.id !== secId);
+      syncGhosts(chId);
+      scheduleMetaSave();
+    }
+    renderNav();
+    if (currentTab === 'outline') renderOutline();
+  };
+  const keys = (e) => {
+    e.stopPropagation();
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  };
+  const onBlur = () => setTimeout(() => finish(!cancelled), 0);
+  text.addEventListener('keydown', keys);
+  text.addEventListener('blur', onBlur);
+  text.addEventListener('paste', (e) => {
+    e.preventDefault();
+    document.execCommand('insertText', false, (e.clipboardData.getData('text/plain') || '').replace(/\s+/g, ' '));
+  });
+}
+
+// a new, blank scene at the end of a chapter, ready for its note
+function addSceneToChapter(chId) {
+  const body = chapterBodyEl(chId);
+  if (!book || !body || !isStory(chId)) return;
+  closeCardEditor();
+  snapshotStructure('scene added');
+  const sec = { id: newSectionId(), text: t('New scene') };
+  book.sectionNotes = book.sectionNotes || {};
+  (book.sectionNotes[chId] = book.sectionNotes[chId] || []).push(sec);
+  placeGhost(body, sec, null);
+  orderSectionNotes(chId);
+  syncChapter(body, chId);
+  scheduleMetaSave();
+  renderNav();
+  if (currentTab === 'outline') renderOutline();
+  const row = document.querySelector(`.nav-scene[data-ch="${chId}"][data-sec="${sec.id}"]`);
+  if (row) {
+    $('#nav-pane').classList.add('open');
+    row.scrollIntoView({ block: 'nearest' });
+    editNavScene(row, { fresh: true });
+  }
 }
 
 // where a dragged scene lands: before the scene it's dropped on, or at the
@@ -6848,7 +6947,7 @@ function wireSceneDrops() {
     return null;
   };
   list.addEventListener('dragover', (e) => {
-    if (!e.dataTransfer.types.includes('application/x-neo-scene')) return;
+    if (!e.dataTransfer.types.includes('application/x-neo-bookscene')) return;
     const to = target(e);
     clear();
     if (!to) return;
@@ -6858,7 +6957,7 @@ function wireSceneDrops() {
   });
   list.addEventListener('dragleave', (e) => { if (!list.contains(e.relatedTarget)) clear(); });
   list.addEventListener('drop', (e) => {
-    const data = e.dataTransfer.getData('application/x-neo-scene');
+    const data = e.dataTransfer.getData('application/x-neo-bookscene');
     if (!data) return;
     e.preventDefault();
     const to = target(e);
@@ -6886,8 +6985,16 @@ function entryPeek(chId) {
 let justAddedEntry = null;
 async function addEntryMenu(at, x, y, from) {
   const hasContents = book.chapterOrder.some((c) => chapterKind(c) === 'contents');
-  const kind = await popMenu(x, y, CHAPTER_KINDS.map((k) => ({ label: kindName(k), value: k, disabled: k === 'contents' && hasContents })), { from });
+  // a scene goes at the end of the chapter above this +
+  const above = book.chapterOrder[at - 1];
+  const sceneOk = !!above && isStory(above);
+  const kind = await popMenu(x, y, [
+    { label: sceneOk ? t('Scene in {name}', { name: chapterName(above) }) : t('Scene'), value: 'scene', disabled: !sceneOk },
+    '-',
+    ...CHAPTER_KINDS.map((k) => ({ label: kindName(k), value: k, disabled: k === 'contents' && hasContents }))
+  ], { from });
   if (!kind) return;
+  if (kind === 'scene') { addSceneToChapter(above); return; }
   addEntry(at, kind);
 }
 function addEntry(at, kind) {

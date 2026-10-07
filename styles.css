@@ -1212,6 +1212,9 @@ body.focus-mode .walk-note { opacity: 0.6; }
 .nav-scene .ns-text.empty { color: #5a5a5a; font-style: italic; }
 .nav-scene .ns-words { flex: none; font-size: 10.5px; color: #5d5d5d; }
 .nav-scene.dragging { opacity: 0.4; }
+.nav-scene.editing { background: #303030; cursor: text; }
+.nav-scene .ns-text[contenteditable="true"] { display: block; color: #ddd; outline: none; -webkit-line-clamp: unset; overflow: visible; }
+.nav-scene .ns-text[contenteditable="true"]:empty::before { content: attr(data-ph); color: #666; font-style: italic; }
 .nav-scene.drop-before { box-shadow: 0 -2px 0 var(--accent); }
 .nav-item.drop-end { box-shadow: inset 0 -2px 0 var(--accent); }
 body.bright .nav-scene { color: #a6a6a6; }
