@@ -2040,3 +2040,9 @@ body.light .tag-pop { background: #fbfaf7; color: #2b2926; border-color: #d9d3c4
 .tag-pop .tp-color:hover { border-color: #555; }
 .tag-pop .tp-color.is-on { border-color: var(--accent); }
 .tag-pop .tp-color i { width: 12px; height: 12px; border-radius: 50%; display: block; flex: none; }
+
+.tag-pop .tp-grip { color: #666; cursor: grab; font-size: 12px; letter-spacing: -2px; padding: 0 2px; user-select: none; flex: none; }
+.tag-pop .tp-grip:hover { color: var(--accent); }
+.tag-pop .tp-row.is-dragging { opacity: 0.4; }
+.tag-pop .tp-row.drop-above { box-shadow: 0 -2px 0 var(--accent); }
+.tag-pop .tp-row.drop-below { box-shadow: 0 2px 0 var(--accent); }

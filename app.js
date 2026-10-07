@@ -7785,7 +7785,10 @@ const bookTags = () => (book.tags = book.tags && Array.isArray(book.tags.defs) ?
 const tagDef = (id) => bookTags().defs.find((d) => d.id === id);
 // what was given to this scene (by its note's id), chapter or part (by its id) itself
 const ownTagIds = (key) => (key && bookTags().by[key] || []).filter((id) => tagDef(id));
-const unionIds = (...lists) => [...new Set(lists.flat())];
+const unionIds = (...lists) => {
+  const defs = bookTags().defs;
+  return [...new Set(lists.flat())].sort((x, y) => defs.findIndex((d) => d.id === x) - defs.findIndex((d) => d.id === y));
+};
 
 // the part a chapter sits in: the nearest part before it, up to the back of the book
 function partOf(chId) {
@@ -7846,6 +7849,20 @@ function ensureSectionId(chId, segIdx) {
   return sec.id;
 }
 
+// put a tag before or after another in the book's list
+function moveTag(id, targetId, below) {
+  const defs = bookTags().defs;
+  if (id === targetId) return;
+  const moving = defs.find((d) => d.id === id);
+  if (!moving) return;
+  const rest = defs.filter((d) => d.id !== id);
+  const at = rest.findIndex((d) => d.id === targetId);
+  if (at < 0) return;
+  rest.splice(below ? at + 1 : at, 0, moving);
+  bookTags().defs = rest;
+  tagsChanged();
+}
+
 function tagsChanged() {
   scheduleMetaSave();
   renderNav();
@@ -7888,6 +7905,41 @@ function tagPicker(x, y, scene) {
     for (const d of defs) {
       const row = document.createElement('div');
       row.className = 'tp-row';
+      row.dataset.id = d.id;
+      // the grip: drag a tag up or down to keep the ones that belong together together
+      const grip = document.createElement('span');
+      grip.className = 'tp-grip';
+      grip.textContent = '⋮⋮';
+      grip.title = t('Drag to reorder');
+      grip.draggable = true;
+      grip.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('application/x-neo-tag', d.id);
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setDragImage(row, 12, 12);
+        row.classList.add('is-dragging');
+      });
+      grip.addEventListener('dragend', () => {
+        row.classList.remove('is-dragging');
+        pop.querySelectorAll('.drop-above, .drop-below').forEach((el) => el.classList.remove('drop-above', 'drop-below'));
+      });
+      row.addEventListener('dragover', (e) => {
+        if (!e.dataTransfer.types.includes('application/x-neo-tag')) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const r = row.getBoundingClientRect();
+        const below = e.clientY > r.top + r.height / 2;
+        pop.querySelectorAll('.drop-above, .drop-below').forEach((el) => el.classList.remove('drop-above', 'drop-below'));
+        row.classList.add(below ? 'drop-below' : 'drop-above');
+      });
+      row.addEventListener('drop', (e) => {
+        const id = e.dataTransfer.getData('application/x-neo-tag');
+        if (!id) return;
+        e.preventDefault();
+        const r = row.getBoundingClientRect();
+        const below = e.clientY > r.top + r.height / 2;
+        moveTag(id, d.id, below);
+        render();
+      });
       const dot = document.createElement('button');
       dot.type = 'button';
       dot.className = 'tp-dot';
@@ -7920,6 +7972,19 @@ function tagPicker(x, y, scene) {
           tagsChanged();
           render();
         };
+        on.addEventListener('keydown', (e) => {
+          if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const defs = bookTags().defs;
+          const i = defs.findIndex((x) => x.id === d.id);
+          const j = e.key === 'ArrowUp' ? i - 1 : i + 1;
+          if (j < 0 || j >= defs.length) return;
+          [defs[i], defs[j]] = [defs[j], defs[i]];
+          tagsChanged();
+          render();
+          pop.querySelectorAll('.tp-row')[j].querySelector('.tp-on')?.focus();
+        });
         on.addEventListener('dblclick', async () => {
           const name = await askInput(t('Rename tag'), t('Tag name'), d.name);
           if (name && name.trim()) { d.name = name.trim(); tagsChanged(); }
@@ -7941,7 +8006,7 @@ function tagPicker(x, y, scene) {
         tagsChanged();
         render();
       };
-      row.append(dot, on, del);
+      row.append(grip, dot, on, del);
       pop.appendChild(row);
       if (colorFor === d.id) {
         const menu = document.createElement('div');
@@ -7993,6 +8058,7 @@ function tagPicker(x, y, scene) {
       : chapterLevel
         ? t('Every scene in this chapter gets these tags. Double-click a name to rename it. Tags are never exported.')
         : t('Double-click a name to rename it. Tags are never exported.');
+    note.textContent += ' ' + t('Drag ⋮⋮ to reorder.');
     pop.appendChild(note);
   };
   const close = () => {
