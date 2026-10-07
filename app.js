@@ -3227,8 +3227,11 @@ let breakRun = 0;
 
 function splitChapterAt(body, chId, block, sel) {
   // an empty line is no way to start a chapter, or end one: blank lines at
-  // the seam stay behind (the new chapter opens on its first words)
-  const blank = (p) => p && p.tagName === 'P' && !p.classList.contains('scene-break') && p.textContent.trim() === '' && !p.querySelector('.ph-mark');
+  // the seam stay behind (the new chapter opens on its first words). Nor is a
+  // *** — the chapter break replaces it, so a split made in text that
+  // already had one (imported, say) doesn't leave it dangling at the seam.
+  const blank = (p) => p && p.tagName === 'P'
+    && (p.classList.contains('scene-break') || (p.textContent.trim() === '' && !p.querySelector('.ph-mark')));
   while (blank(block) && block.nextElementSibling) {
     const next = block.nextElementSibling;
     block.remove();
