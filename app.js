@@ -7155,6 +7155,9 @@ async function moveSelectionToDarlings(html, text) {
 
   let anchorPrefix = null;
   let anchorSuffix = null;
+  // set when the cut took a whole paragraph: restoring puts it back as its own
+  // paragraph, after the one before it ('after') or before the one after ('before')
+  let wholeBlock = null;
   if (range) {
     const startNode = range.startContainer.nodeType === Node.TEXT_NODE ? range.startContainer.parentElement : range.startContainer;
     const startBlock = startNode && startNode.closest ? startNode.closest('p') : null;
@@ -7166,8 +7169,8 @@ async function moveSelectionToDarlings(html, text) {
       const prev = startBlock.previousElementSibling;
       const next = startBlock.nextElementSibling;
       startBlock.remove();
-      if (prev) { range.selectNodeContents(prev); range.collapse(false); }
-      else if (next) { range.selectNodeContents(next); range.collapse(true); }
+      if (prev) { range.selectNodeContents(prev); range.collapse(false); wholeBlock = 'after'; }
+      else if (next) { range.selectNodeContents(next); range.collapse(true); wholeBlock = 'before'; }
     }
     sel.removeAllRanges(); sel.addRange(range);
     const r = range;
@@ -7206,6 +7209,7 @@ async function moveSelectionToDarlings(html, text) {
     chapterLabel: chIdx >= 0 ? chapterName(chId) : t('Manuscript'),
     anchorPrefix,
     anchorSuffix,
+    wholeBlock,
     date: new Date().toISOString()
   });
   // Darlings first; the chapter without the passage is saved only once the
@@ -9601,7 +9605,21 @@ async function restoreDarling(id) {
       const at = textPosToRange(body, pos);
       if (at) {
         let scrollTo = at.startContainer.parentElement?.closest?.('p') || body;
-        if (d.html && /<p[\s>]/i.test(d.html)) {
+        if (d.wholeBlock && (d.html || d.text)) {
+          // a whole paragraph: its own paragraph again, not tacked onto a neighbour
+          const holder = document.createElement('div');
+          holder.innerHTML = /<p[\s>]/i.test(d.html || '') ? d.html : '<p>' + (d.html || d.text.replace(/\n+/g, '</p><p>')) + '</p>';
+          const host = at.startContainer.parentElement?.closest?.('p');
+          const first = holder.firstElementChild;
+          if (host && first && host.parentElement) {
+            if (d.wholeBlock === 'before') host.before(...holder.childNodes);
+            else host.after(...holder.childNodes);
+            scrollTo = first;
+          } else {
+            body.append(...holder.childNodes);
+            scrollTo = first || scrollTo;
+          }
+        } else if (d.html && /<p[\s>]/i.test(d.html)) {
           // block content: paragraphs go back in after the host paragraph
           const holder = document.createElement('div');
           holder.innerHTML = d.html;
@@ -9630,7 +9648,8 @@ async function restoreDarling(id) {
     : book.chapterOrder[book.chapterOrder.length - 1];
   if (!chId) { newChapter(); chId = book.chapterOrder[0]; }
   const body = document.querySelector(`.chapter[data-id="${chId}"] .chapter-body`);
-  const frag = d.html ? d.html : '<p>' + d.text.replace(/\n+/g, '</p><p>') + '</p>';
+  const frag = d.html && (!d.wholeBlock || /<p[\s>]/i.test(d.html)) ? d.html
+    : '<p>' + (d.html || d.text.replace(/\n+/g, '</p><p>')) + '</p>';
   body.insertAdjacentHTML('beforeend', frag);
   chapterHTML[chId] = captureBody(body);
   if (!(await savedBeforeLettingGo(chId))) return;
