@@ -1645,9 +1645,12 @@ function createWindow() {
     if (params.isEditable && line) {
       items.push({ label: line.pageBreak ? t('Remove Page Break') : t('Page Break Here'), click: () => sendToWindow({ type: 'scriptPageBreak' }) }, { type: 'separator' });
     }
+    const toDarlings = darlingContext && !!params.selectionText;
+    darlingContext = false;
     if (params.isEditable) items.push({ role: 'cut', label: t('Cut'), enabled: !!can.canCut });
     items.push({ role: 'copy', label: t('Copy'), enabled: !!can.canCopy });
     if (params.isEditable) items.push({ role: 'paste', label: t('Paste'), enabled: !!can.canPaste });
+    if (toDarlings) items.push({ type: 'separator' }, { label: t('Send to Darlings'), click: () => sendToWindow({ type: 'darlingFromMenu' }) });
     items.push({ type: 'separator' }, { role: 'selectAll', label: t('Select All') });
     Menu.buildFromTemplate(items).popup({ window: win });
   });
@@ -1813,6 +1816,10 @@ const SCRIPT_ELEMENTS = ['heading', 'action', 'character', 'paren', 'dialogue', 
 // the script line a right-click is on: { pageBreak } (whether it starts a
 // page already), or null when the click wasn't on one
 let scriptContext = null;
+// what the window says about a right-click: whether the selection is
+// manuscript text that can go to Darlings
+let darlingContext = false;
+ipcMain.on('darling:context', (e, on) => { darlingContext = !!on; e.returnValue = true; });
 ipcMain.on('script:context', (e, st) => {
   scriptContext = st && typeof st === 'object' ? { pageBreak: !!st.pageBreak } : null;
   e.returnValue = true;

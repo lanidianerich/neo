@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld('neo', {
   // sent (and waited for) as a script line is right-clicked, so the menu
   // that opens next can offer Page Break Here
   scriptContext: (st) => ipcRenderer.sendSync('script:context', st),
+  darlingContext: (on) => ipcRenderer.sendSync('darling:context', on),
   typewriterState: (st) => ipcRenderer.send('typewriter:state', st),
   vimState: (on) => ipcRenderer.send('vim:state', on),
   uiZoomState: (z) => ipcRenderer.send('uizoom:state', z),

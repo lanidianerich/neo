@@ -7257,6 +7257,14 @@ async function migrateDarlingAnchors() {
 }
 
 // keyboard route: select a passage, ⌘⇧D to move to Darlings
+// right-click on selected manuscript text offers Send to Darlings
+document.addEventListener('contextmenu', (e) => {
+  const sel = window.getSelection();
+  const inBody = !!(book && currentTab === 'manuscript' && e.target.closest && e.target.closest('.chapter-body')
+    && sel.rangeCount && !sel.isCollapsed);
+  window.neo.darlingContext(inBody);
+}, true);
+
 function darlingFromKeyboard() {
   const sel = window.getSelection();
   if (!sel.rangeCount || sel.isCollapsed) {
@@ -13688,6 +13696,7 @@ window.neo.onMenu(async (msg) => {
   if (msg.type === 'scriptElement' && book && isScript()) spSetElement(msg.value);
   if (msg.type === 'scriptStyle') spToggleStyle(msg.value);
   if (msg.type === 'scriptPageBreak') spTogglePageBreak();
+  if (msg.type === 'darlingFromMenu' && currentTab === 'manuscript') darlingFromKeyboard();
   if (msg.type === 'markdownEmphasis') {
     if (msg.checked) delete library.markdownOff; else library.markdownOff = true;
     await writeLibrary(library);
