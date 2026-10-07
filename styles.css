@@ -2046,3 +2046,11 @@ body.light .tag-pop { background: #fbfaf7; color: #2b2926; border-color: #d9d3c4
 .tag-pop .tp-row.is-dragging { opacity: 0.4; }
 .tag-pop .tp-row.drop-above { box-shadow: 0 -2px 0 var(--accent); }
 .tag-pop .tp-row.drop-below { box-shadow: 0 2px 0 var(--accent); }
+
+/* Unassigned and Cut scenes wait out of the manuscript's scroll until the writer goes to one */
+.chapter.kind-unassigned:not(.revealed), .chapter.kind-cut:not(.revealed) { display: none; }
+/* the scene the caret is in */
+.nav-scene.current { color: #eee; background: #2c2a26; border-left-color: var(--accent); }
+.nav-scene.current .ns-letter { color: #fff; }
+body.bright .nav-scene.current { color: #fff; }
+body.light .nav-scene.current { color: #1c1a17; background: #ebe4d3; }

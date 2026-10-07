@@ -1653,7 +1653,7 @@ function createWindow() {
     if (params.isEditable) items.push({ role: 'cut', label: t('Cut'), enabled: !!can.canCut });
     items.push({ role: 'copy', label: t('Copy'), enabled: !!can.canCopy });
     if (params.isEditable) items.push({ role: 'paste', label: t('Paste'), enabled: !!can.canPaste });
-    if (toDarlings) items.push({ type: 'separator' }, { label: t('Send to Darlings'), click: () => sendToWindow({ type: 'darlingFromMenu' }) });
+    if (toDarlings) items.push({ type: 'separator' }, { label: t('Send to Darlings'), click: () => sendToWindow({ type: 'darlingFromMenu' }) }, { label: t('Send to Cut Scenes'), click: () => sendToWindow({ type: 'cutFromMenu' }) });
     items.push({ type: 'separator' }, { role: 'selectAll', label: t('Select All') });
     Menu.buildFromTemplate(items).popup({ window: win });
   });

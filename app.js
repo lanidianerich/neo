@@ -2359,6 +2359,7 @@ function renderChapters() {
     sec.dataset.id = chId;
     const role = chapterRole(chId);
     if (role) sec.classList.add(role);
+    if (chId === revealedSpecial) sec.classList.add('revealed');
     const head = document.createElement('div');
     head.className = 'chapter-head';
     if (kind === 'unnumbered') head.classList.add('no-number');
@@ -2800,6 +2801,7 @@ function showEntry(chId) {
 }
 
 function focusChapterStart(chId) {
+  revealSpecial(chId);
   const nb = document.querySelector(`.chapter[data-id="${chId}"] .chapter-body`);
   if (!nb) return;
   if (!nb.isContentEditable) { showEntry(chId); return; }
@@ -3779,6 +3781,7 @@ document.addEventListener('selectionchange', () => {
       try { lastCaretPara.normalize(); } catch { /* fine */ }
     }
     lastCaretPara = caretP;
+    highlightScene(caretP);
   }
   // a script: the element in the pane, the suggestion at the caret
   if (isScript()) {
@@ -4946,7 +4949,18 @@ async function deleteChapterQuiet(chId) {
   if (book && book.id === bookId) await window.neo.deleteChapter(bookId, chId);
 }
 
+// Unassigned and Cut scenes stay out of the manuscript's scroll until the writer
+// goes to one (from the pane, an Outline card, or Go to the page); they fold away
+// again when the writer goes to anything else.
+let revealedSpecial = null;
+function revealSpecial(chId) {
+  revealedSpecial = chId && book && SPECIAL_KINDS.includes(chapterKind(chId)) ? chId : null;
+  document.querySelectorAll('.chapter.revealed').forEach((s) => { if (s.dataset.id !== revealedSpecial) s.classList.remove('revealed'); });
+  if (revealedSpecial) document.querySelector(`.chapter[data-id="${revealedSpecial}"]`)?.classList.add('revealed');
+}
+
 function focusChapter(chId) {
+  revealSpecial(chId);
   const body = document.querySelector(`.chapter[data-id="${chId}"] .chapter-body`);
   if (!body) return;
   if (!body.isContentEditable) { showEntry(chId); return; }
@@ -6909,6 +6923,8 @@ function renderNav() {
   list.appendChild(gap(book.chapterOrder.length));
   justAddedEntry = null;
   renderContentsLists();
+  currentSceneRow = null;
+  highlightScene();
 }
 
 // The chapter's scenes, listed under it in the Chapters pane: one line each
@@ -7348,6 +7364,27 @@ navList.addEventListener('drop', async (e) => {
 
 function highlightNav() {
   $$('.nav-item').forEach((el) => el.classList.toggle('current', el.dataset.id === currentChapterId));
+  highlightScene();
+}
+
+// the scene the caret is in, marked in the Chapters pane
+let currentSceneRow = null;
+function highlightScene(caretP = lastCaretPara) {
+  let row = null;
+  if (book && caretP && caretP.isConnected && caretP.parentElement && caretP.parentElement.classList.contains('chapter-body')) {
+    const chId = caretP.closest('.chapter').dataset.id;
+    let seg = 0;
+    for (let e = caretP.previousElementSibling; e; e = e.previousElementSibling) if (e.classList.contains('scene-break')) seg++;
+    row = document.querySelector(`.nav-scene[data-ch="${chId}"][data-seg="${seg}"]`);
+  }
+  if (row === currentSceneRow && (!row || row.classList.contains('current'))) return;
+  currentSceneRow?.classList.remove('current');
+  currentSceneRow = row;
+  if (row) {
+    row.classList.add('current');
+    const pane = $('#nav-pane');
+    if (pane.dataset.pinned === '1') row.scrollIntoView({ block: 'nearest' });
+  }
 }
 
 function scheduleNavRefresh() {
@@ -7653,6 +7690,83 @@ document.addEventListener('contextmenu', (e) => {
     && sel.rangeCount && !sel.isCollapsed);
   window.neo.darlingContext(inBody);
 }, true);
+
+// Right-click selected text, Send to Cut Scenes: the words leave the page and
+// become a scene of their own in Cut Scenes (the way a darling leaves), described
+// by where they came from; drag the scene back into a chapter to restore it.
+async function sendSelectionToCut() {
+  const sel = window.getSelection();
+  if (!book || !sel.rangeCount || sel.isCollapsed || sel.toString().trim() === '') return;
+  let node = sel.anchorNode;
+  if (node && node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+  const srcBody = node && node.closest ? node.closest('.chapter-body') : null;
+  if (!srcBody) return;
+  const srcId = srcBody.closest('.chapter').dataset.id;
+  if (chapterKind(srcId) === 'cut') { toast(t('These words are already in Cut Scenes')); return; }
+  const range = sel.getRangeAt(0);
+  const holder = document.createElement('div');
+  holder.appendChild(range.cloneContents());
+  // the words, as paragraphs of their own (a *** inside the selection stays a ***)
+  const frag = document.createElement('div');
+  const kids = [...holder.childNodes];
+  if (kids.length && kids.every((n) => n.nodeType === Node.ELEMENT_NODE && n.tagName === 'P')) {
+    for (const p of kids) {
+      if (p.classList.contains('scene-break')) { frag.appendChild(newSceneBreak()); continue; }
+      if (p.classList.contains('ghost') || !p.textContent.trim()) continue;
+      const np = document.createElement('p');
+      np.innerHTML = p.innerHTML;
+      if (p.classList.contains('poetry')) np.className = 'poetry';
+      frag.appendChild(np);
+    }
+  } else {
+    const np = document.createElement('p');
+    np.append(...kids);
+    frag.appendChild(np);
+  }
+  if (!frag.textContent.trim()) return;
+  snapshotStructure('cut scene');
+  breakRun++;
+  // 1. the words leave the page (a whole paragraph leaves no empty shell behind)
+  const startNode = range.startContainer.nodeType === Node.TEXT_NODE ? range.startContainer.parentElement : range.startContainer;
+  const startBlock = startNode && startNode.closest ? startNode.closest('p') : null;
+  range.deleteContents();
+  if (startBlock && !startBlock.textContent.trim() && !startBlock.querySelector('span, .ph-mark')
+      && startBlock.parentElement && startBlock.parentElement.children.length > 1) {
+    const prev = startBlock.previousElementSibling;
+    const next = startBlock.nextElementSibling;
+    startBlock.remove();
+    if (prev) { range.selectNodeContents(prev); range.collapse(false); }
+    else if (next) { range.selectNodeContents(next); range.collapse(true); }
+  }
+  sel.removeAllRanges();
+  sel.addRange(range);
+  syncChapter(srcBody, srcId);
+  const label = chapterName(srcId);
+  // 2. Cut Scenes, made if it isn't there yet (this redraws the pages from what they hold now)
+  const cutId = ensureSpecial('cut');
+  const cutBody = chapterBodyEl(cutId);
+  if (!cutBody) return;
+  const wasEmpty = !cutBody.innerText.trim() && !cutBody.querySelector('.scene-break, .ghost, .ph-mark');
+  if (wasEmpty) cutBody.innerHTML = '';
+  else if (!(cutBody.lastElementChild && cutBody.lastElementChild.classList.contains('scene-break'))) cutBody.appendChild(newSceneBreak());
+  const secId = newSectionId();
+  const prose = [...frag.children].filter((p) => !p.classList.contains('scene-break'));
+  for (const p of [...frag.children]) cutBody.appendChild(p);
+  if (prose[0]) prose[0].dataset.secId = secId;
+  book.sectionNotes = book.sectionNotes || {};
+  (book.sectionNotes[cutId] = book.sectionNotes[cutId] || []).push({ id: secId, text: t('From {name}', { name: label }) });
+  orderSectionNotes(cutId);
+  syncChapter(cutBody, cutId);
+  // the words are safe in Cut Scenes before the page they left is saved
+  clearTimeout(saveTimers[cutId]);
+  clearTimeout(saveTimers[srcId]);
+  persistChapter(cutId).then(() => persistChapter(srcId))
+    .catch((err) => window.neo.logError('cut scene: ' + (err && err.message || err)));
+  scheduleMetaSave();
+  renderNav();
+  if (currentTab === 'outline') renderOutline();
+  toast(t('Sent to Cut Scenes — not counted, not exported; drag the scene back any time ({key} to undo)', { key: KZ }));
+}
 
 function darlingFromKeyboard() {
   const sel = window.getSelection();
@@ -9233,6 +9347,7 @@ function deleteSectionNote(chId, secId) {
 function goToCard(cell) {
   if (cell.dataset.kind === 'scene') { goToScene(cell); return; }
   const chId = cell.dataset.ch;
+  revealSpecial(chId);
   switchTab('manuscript');
   if (cell.dataset.kind === 'chapter') {
     focusChapterStart(chId);
@@ -14454,6 +14569,7 @@ window.neo.onMenu(async (msg) => {
   if (msg.type === 'scriptStyle') spToggleStyle(msg.value);
   if (msg.type === 'scriptPageBreak') spTogglePageBreak();
   if (msg.type === 'darlingFromMenu' && currentTab === 'manuscript') darlingFromKeyboard();
+  if (msg.type === 'cutFromMenu' && currentTab === 'manuscript') sendSelectionToCut();
   if (msg.type === 'markdownEmphasis') {
     if (msg.checked) delete library.markdownOff; else library.markdownOff = true;
     await writeLibrary(library);
