@@ -2513,6 +2513,7 @@ async function chapterMenu(chId, x = 0, y = 0, from = null) {
     // one contents per book, and never over words: it would hide them
     disabled: k === 'contents' && k !== kind && (otherContents || words > 0)
   }));
+  items.push('-', { label: t('Tags…'), value: 'tags' });
   // any piece of the story can leave on its own — to a beta reader, an
   // editor, a magazine — in any format the book can
   if (STORY_KINDS.includes(kind) && words > 0) items.push('-', { label: t('Export Chapter…'), value: 'export' });
@@ -2524,6 +2525,7 @@ async function chapterMenu(chId, x = 0, y = 0, from = null) {
   items.push('-', { label: t('Delete'), value: 'delete', danger: true });
   const choice = await popMenu(x, y, items, { title: chapterName(chId), from: from || document.querySelector(`.nav-item[data-id="${chId}"] .n-row`) });
   if (!choice || choice === kind) return null;
+  if (choice === 'tags') { tagPicker(x, y, { ch: chId, level: 'chapter' }); return null; }
   if (choice === 'export') {
     const formats = [
       { label: t('Text (.txt)'), value: 'txt' }, { label: t('Markdown (.md)'), value: 'md' }, { label: t('HTML (.html)'), value: 'html' },
@@ -3244,6 +3246,36 @@ let enterRun = 0;
 // recent edits are breaks, ⌘Z routes to NEO's structural undo, one per press
 let breakRun = 0;
 
+// A paragraph split mid-sentence leaves the space the split fell on at the start of
+// the new paragraph (and at the end of the old one): a space that shows as a stray
+// indent on a line set flush, and as a drop cap on a space. A break in the text
+// takes it away, so every paragraph begins on its first letter.
+const SEAM_SPACE = /^[ \t\u00A0\u202F]+/;
+function trimParaStart(p) {
+  if (!p) return;
+  const w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+  let n;
+  while ((n = w.nextNode())) {
+    if (!n.data) continue;
+    if (SEAM_SPACE.test(n.data)) n.data = n.data.replace(SEAM_SPACE, '');
+    if (n.data) return; // reached the first letter
+  }
+}
+function trimParaEnd(p) {
+  if (!p || p.tagName !== 'P') return;
+  const texts = [];
+  const w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+  let n;
+  while ((n = w.nextNode())) texts.push(n);
+  for (let i = texts.length - 1; i >= 0; i--) {
+    const node = texts[i];
+    if (!node.data) continue;
+    node.data = node.data.replace(/[ \t\u00A0\u202F]+$/, '');
+    if (node.data) return;
+  }
+}
+const trimSeam = (before, after) => { trimParaEnd(before); trimParaStart(after); };
+
 function splitChapterAt(body, chId, block, sel) {
   // an empty line is no way to start a chapter, or end one: blank lines at
   // the seam stay behind (the new chapter opens on its first words). Nor is a
@@ -3257,6 +3289,7 @@ function splitChapterAt(body, chId, block, sel) {
     block = next;
   }
   while (blank(block.previousElementSibling) && block.previousElementSibling.previousElementSibling) block.previousElementSibling.remove();
+  trimSeam(block.previousElementSibling, block);
   const parts = [];
   let n = block;
   while (n) {
@@ -3364,6 +3397,7 @@ function handleEnter(e, body, chId) {
         brk.textContent = '***';
         block.before(brk);
       }
+      trimSeam(block.previousElementSibling && block.previousElementSibling.previousElementSibling, block);
       const keep = document.createRange();
       keep.setStart(block, 0);
       keep.collapse(true);
@@ -3385,6 +3419,13 @@ function handleEnter(e, body, chId) {
       restoreCaret(caret);
     }
     document.execCommand('insertParagraph');
+    {
+      const sp = window.getSelection();
+      let at = sp.rangeCount ? sp.anchorNode : null;
+      if (at && at.nodeType === Node.TEXT_NODE) at = at.parentElement;
+      const nb = at && at.closest ? at.closest('p') : null;
+      if (nb && body.contains(nb) && nb.previousElementSibling) trimSeam(nb.previousElementSibling, nb);
+    }
     syncChapter(body, chId);
     return true;
   }
@@ -6763,6 +6804,10 @@ function renderNav() {
       ? (book.title || t('The story'))
       : (chTitle ? `${chapterMark(chId)} · ${chTitle}` : chapterName(chId));
 
+    if (story || special || kind === 'part') {
+      const dots = tagDotsEl(chapterTagIds(chId), 'n-tagdots');
+      if (dots) item.querySelector('.n-label').after(dots);
+    }
     // the row is the drag handle, so the note below stays freely editable
     const rowEl = item.querySelector('.n-row');
     rowEl.draggable = true;
@@ -6893,7 +6938,7 @@ function navScenes(chId) {
     words.className = 'ns-words';
     words.textContent = seg.words ? fmtNum(seg.words) : '';
     row.append(letter, text, words);
-    const stripe = tagStripe(seg.id, 'ns-tags');
+    const stripe = tagStripeEl(sceneTagIds(chId, seg.id), 'ns-tags');
     if (stripe) row.appendChild(stripe);
     pressable(row, t('Section {letter}', { letter: letter.textContent }) + '. ' + text.textContent);
     row.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); editNavScene(row); });
@@ -7723,33 +7768,64 @@ function switchTab(name) {
 
 /* ================================================================== */
 /*  TAGS                                                               */
-/*  The writer's own labels for scenes (Act I, a point of view, a       */
-/*  timeline), each with a color that runs down the side of the         */
-/*  scene's card in the Outline and its line in the Chapters pane.      */
-/*  They live in book.json (book.tags = { defs, by }) and are never     */
-/*  part of an export: only the writer sees them.                       */
+/*  The writer's own labels (Act I, a point of view, a timeline), each */
+/*  with a color: a line down the side of a scene's card in the        */
+/*  Outline and its line in the Chapters pane, dots on a chapter or a  */
+/*  part. A tag given to a part reaches every chapter and scene in it; */
+/*  one given to a chapter reaches its scenes. They live in book.json  */
+/*  (book.tags = { defs, by }) and are never part of an export.        */
 /* ================================================================== */
 
-const TAG_COLORS = ['#c0654a', '#d4a84b', '#6f9a5a', '#4f8fa8', '#8a6bb0', '#b85c8a', '#5f9c92', '#8c8c8c'];
+const TAG_COLORS = [
+  ['Terracotta', '#c0654a'], ['Amber', '#d98c3f'], ['Gold', '#d4a84b'], ['Olive', '#a4b84a'],
+  ['Green', '#6f9a5a'], ['Teal', '#5f9c92'], ['Sky', '#4f8fa8'], ['Blue', '#3f6fb0'],
+  ['Violet', '#8a6bb0'], ['Rose', '#b85c8a'], ['Sand', '#e0c9a6'], ['Gray', '#8c8c8c']
+];
 const bookTags = () => (book.tags = book.tags && Array.isArray(book.tags.defs) ? book.tags : { defs: [], by: {} });
 const tagDef = (id) => bookTags().defs.find((d) => d.id === id);
-// the tags a scene carries, by its note's id (the scene's id, once it has one)
-const sceneTagIds = (secId) => (secId && bookTags().by[secId] || []).filter((id) => tagDef(id));
-// a stripe for the side of a card: one color, or the colors stacked
-function tagStripeCss(ids) {
-  const cols = ids.map((id) => tagDef(id).color);
-  if (!cols.length) return '';
-  if (cols.length === 1) return cols[0];
-  const step = 100 / cols.length;
-  return 'linear-gradient(to bottom, ' + cols.map((c, i) => `${c} ${i * step}%, ${c} ${(i + 1) * step}%`).join(', ') + ')';
+// what was given to this scene (by its note's id), chapter or part (by its id) itself
+const ownTagIds = (key) => (key && bookTags().by[key] || []).filter((id) => tagDef(id));
+const unionIds = (...lists) => [...new Set(lists.flat())];
+
+// the part a chapter sits in: the nearest part before it, up to the back of the book
+function partOf(chId) {
+  const order = book.chapterOrder;
+  const kind = chapterKind(chId);
+  if (kind === 'part' || BACK_KINDS.includes(kind) || SPECIAL_KINDS.includes(kind)) return null;
+  for (let i = order.indexOf(chId) - 1; i >= 0; i--) {
+    const k = chapterKind(order[i]);
+    if (k === 'part') return order[i];
+    if (BACK_KINDS.includes(k) || SPECIAL_KINDS.includes(k)) return null;
+  }
+  return null;
 }
-function tagStripe(secId, cls) {
-  const ids = sceneTagIds(secId);
+// the tags a scene shows: its own, its chapter's, its part's
+const sceneTagIds = (chId, secId) => unionIds(ownTagIds(secId), ownTagIds(chId), ownTagIds(partOf(chId)));
+const chapterTagIds = (chId) => unionIds(ownTagIds(chId), ownTagIds(partOf(chId)));
+
+// a stripe for the side of a card: one color, or the colors stacked
+function tagStripeEl(ids, cls) {
+  if (!ids.length) return null;
+  const cols = ids.map((id) => tagDef(id).color);
+  const step = 100 / cols.length;
+  const el = document.createElement('span');
+  el.className = cls;
+  el.style.background = cols.length === 1 ? cols[0]
+    : 'linear-gradient(to bottom, ' + cols.map((c, i) => `${c} ${i * step}%, ${c} ${(i + 1) * step}%`).join(', ') + ')';
+  el.title = ids.map((id) => tagDef(id).name).join(', ');
+  return el;
+}
+// small colored dots, for a chapter or a part
+function tagDotsEl(ids, cls) {
   if (!ids.length) return null;
   const el = document.createElement('span');
   el.className = cls;
-  el.style.background = tagStripeCss(ids);
   el.title = ids.map((id) => tagDef(id).name).join(', ');
+  for (const id of ids) {
+    const d = document.createElement('i');
+    d.style.background = tagDef(id).color;
+    el.appendChild(d);
+  }
   return el;
 }
 
@@ -7776,16 +7852,30 @@ function tagsChanged() {
   if (currentTab === 'outline') renderOutline();
 }
 
-// The picker: every tag as a line to switch on or off for this scene, its
-// color (click to change), its name (click to rename), a × to remove it, and a
-// field to make a new one. `scene` is { ch, seg, sec }.
+// The picker: every tag as a line to switch on or off, its color (a menu of
+// named colors), its name (double-click to rename), a × to remove it, and a
+// field to make a new one. `scene` is { ch, seg, sec } for a scene, or
+// { ch, level: 'chapter' } for a chapter or a part. A tag that reaches the
+// line from above shows ticked and fixed, with where it comes from.
 function tagPicker(x, y, scene) {
   document.querySelector('.tag-pop')?.remove();
   const pop = document.createElement('div');
   pop.className = 'tag-pop';
   pop.setAttribute('role', 'dialog');
   pop.setAttribute('aria-label', t('Tags'));
-  let secId = scene.sec || (Number.isInteger(scene.seg) && scene.seg >= 0 ? (chapterSegments(scene.ch)[scene.seg] || {}).id : '') || '';
+  const chapterLevel = scene.level === 'chapter';
+  const part = partOf(scene.ch);
+  let key = chapterLevel ? scene.ch
+    : (scene.sec || (Number.isInteger(scene.seg) && scene.seg >= 0 ? (chapterSegments(scene.ch)[scene.seg] || {}).id : '') || '');
+  // where each inherited tag comes from
+  const via = () => {
+    const m = new Map();
+    const add = (ids, from) => ids.forEach((id) => { if (!m.has(id)) m.set(id, from); });
+    if (!chapterLevel) add(ownTagIds(scene.ch), chapterKind(scene.ch) === 'part' ? chapterName(scene.ch) : chapterName(scene.ch));
+    if (part) add(ownTagIds(part), chapterName(part));
+    return m;
+  };
+  let colorFor = null; // the tag whose color menu is open
   const render = () => {
     pop.innerHTML = '';
     const head = document.createElement('div');
@@ -7793,7 +7883,8 @@ function tagPicker(x, y, scene) {
     head.textContent = t('Tags · only you see these');
     pop.appendChild(head);
     const defs = bookTags().defs;
-    const have = new Set(sceneTagIds(secId));
+    const have = new Set(ownTagIds(key));
+    const inherited = via();
     for (const d of defs) {
       const row = document.createElement('div');
       row.className = 'tp-row';
@@ -7801,33 +7892,40 @@ function tagPicker(x, y, scene) {
       dot.type = 'button';
       dot.className = 'tp-dot';
       dot.style.background = d.color;
-      dot.title = t('Change color');
-      dot.onclick = () => {
-        d.color = TAG_COLORS[(TAG_COLORS.indexOf(d.color) + 1) % TAG_COLORS.length];
-        tagsChanged();
-        render();
-      };
+      dot.title = t('Choose a color');
+      dot.setAttribute('aria-haspopup', 'listbox');
+      dot.onclick = () => { colorFor = colorFor === d.id ? null : d.id; render(); };
+      const from = inherited.get(d.id);
       const on = document.createElement('button');
       on.type = 'button';
-      on.className = 'tp-on' + (have.has(d.id) ? ' is-on' : '');
+      on.className = 'tp-on' + (have.has(d.id) ? ' is-on' : '') + (from && !have.has(d.id) ? ' is-inherited' : '');
       on.setAttribute('role', 'checkbox');
-      on.setAttribute('aria-checked', have.has(d.id) ? 'true' : 'false');
+      on.setAttribute('aria-checked', have.has(d.id) || from ? 'true' : 'false');
       on.textContent = d.name;
-      on.onclick = () => {
-        if (!secId) secId = ensureSectionId(scene.ch, scene.seg) || '';
-        if (!secId) return;
-        const by = bookTags().by;
-        const list = by[secId] || [];
-        by[secId] = have.has(d.id) ? list.filter((i) => i !== d.id) : [...list, d.id];
-        if (!by[secId].length) delete by[secId];
-        tagsChanged();
-        render();
-      };
-      on.addEventListener('dblclick', async () => {
-        const name = await askInput(t('Rename tag'), t('Tag name'), d.name);
-        if (name && name.trim()) { d.name = name.trim(); tagsChanged(); }
-        render();
-      });
+      if (from && !have.has(d.id)) {
+        on.disabled = true;
+        on.title = t('From {name}', { name: from });
+        const tag = document.createElement('span');
+        tag.className = 'tp-from';
+        tag.textContent = t('from {name}', { name: from });
+        on.appendChild(tag);
+      } else {
+        on.onclick = () => {
+          if (!key) key = ensureSectionId(scene.ch, scene.seg) || '';
+          if (!key) return;
+          const by = bookTags().by;
+          const list = by[key] || [];
+          by[key] = have.has(d.id) ? list.filter((i) => i !== d.id) : [...list, d.id];
+          if (!by[key].length) delete by[key];
+          tagsChanged();
+          render();
+        };
+        on.addEventListener('dblclick', async () => {
+          const name = await askInput(t('Rename tag'), t('Tag name'), d.name);
+          if (name && name.trim()) { d.name = name.trim(); tagsChanged(); }
+          render();
+        });
+      }
       const del = document.createElement('button');
       del.type = 'button';
       del.className = 'tp-del';
@@ -7845,6 +7943,24 @@ function tagPicker(x, y, scene) {
       };
       row.append(dot, on, del);
       pop.appendChild(row);
+      if (colorFor === d.id) {
+        const menu = document.createElement('div');
+        menu.className = 'tp-colors';
+        menu.setAttribute('role', 'listbox');
+        for (const [name, hex] of TAG_COLORS) {
+          const o = document.createElement('button');
+          o.type = 'button';
+          o.className = 'tp-color' + (hex === d.color ? ' is-on' : '');
+          o.setAttribute('role', 'option');
+          o.setAttribute('aria-selected', hex === d.color ? 'true' : 'false');
+          const sw = document.createElement('i');
+          sw.style.background = hex;
+          o.append(sw, document.createTextNode(name));
+          o.onclick = () => { d.color = hex; colorFor = null; tagsChanged(); render(); };
+          menu.appendChild(o);
+        }
+        pop.appendChild(menu);
+      }
     }
     const make = document.createElement('input');
     make.type = 'text';
@@ -7860,11 +7976,11 @@ function tagPicker(x, y, scene) {
       if (!name) return;
       const tags = bookTags();
       const used = new Set(tags.defs.map((d) => d.color));
-      const color = TAG_COLORS.find((c) => !used.has(c)) || TAG_COLORS[tags.defs.length % TAG_COLORS.length];
+      const color = (TAG_COLORS.find(([, hex]) => !used.has(hex)) || TAG_COLORS[tags.defs.length % TAG_COLORS.length])[1];
       const def = { id: 'tg-' + Date.now().toString(36), name, color };
       tags.defs.push(def);
-      if (!secId) secId = ensureSectionId(scene.ch, scene.seg) || '';
-      if (secId) tags.by[secId] = [...(tags.by[secId] || []), def.id];
+      if (!key) key = ensureSectionId(scene.ch, scene.seg) || '';
+      if (key) tags.by[key] = [...(tags.by[key] || []), def.id];
       tagsChanged();
       render();
       pop.querySelector('.tp-new').focus();
@@ -7872,7 +7988,11 @@ function tagPicker(x, y, scene) {
     pop.appendChild(make);
     const note = document.createElement('div');
     note.className = 'tp-note';
-    note.textContent = t('Double-click a name to rename it. Tags are never exported.');
+    note.textContent = chapterKind(scene.ch) === 'part'
+      ? t('Everything in this part gets these tags. Double-click a name to rename it. Tags are never exported.')
+      : chapterLevel
+        ? t('Every scene in this chapter gets these tags. Double-click a name to rename it. Tags are never exported.')
+        : t('Double-click a name to rename it. Tags are never exported.');
     pop.appendChild(note);
   };
   const close = () => {
@@ -8548,7 +8668,10 @@ function boardPartRow(chId) {
   label.textContent = chapterName(chId) + (title ? ' · ' + title : '');
   const rule = document.createElement('span');
   rule.className = 'ob-rule';
-  row.append(label, rule);
+  const partDots = tagDotsEl(ownTagIds(chId), 'ob-tagdots');
+  row.append(label);
+  if (partDots) row.append(partDots);
+  row.append(rule);
   row.addEventListener('contextmenu', (e) => { e.preventDefault(); chapterMenu(chId, e.clientX, e.clientY, row); });
   return row;
 }
@@ -8620,6 +8743,8 @@ function chapterCard(chId, opening, solo) {
   const n = countWords(chapterText(chId));
   words.textContent = cardWords(n);
   head.append(mark, words);
+  const chDots = tagDotsEl(chapterTagIds(chId), 'ob-tagdots');
+  if (chDots) head.appendChild(chDots);
   if (chapterHasFlag(chId)) head.appendChild(cardFlag());
   const text = document.createElement('div');
   text.className = 'ob-text';
@@ -8649,7 +8774,7 @@ function sectionCard(chId, seg, segIdx, letterIdx) {
   foot.className = 'ob-foot';
   foot.textContent = seg.words ? cardWords(seg.words) : t('not written yet');
   card.append(head, text, foot);
-  const stripe = tagStripe(seg.id, 'ob-tags');
+  const stripe = tagStripeEl(sceneTagIds(chId, seg.id), 'ob-tags');
   if (stripe) card.appendChild(stripe);
   card.classList.toggle('unwritten', !seg.words);
   cell.dataset.written = seg.words ? '1' : '';

@@ -2027,3 +2027,16 @@ body.light .tag-pop { background: #fbfaf7; color: #2b2926; border-color: #d9d3c4
 .tag-pop .tp-new { width: 100%; box-sizing: border-box; margin-top: 8px; padding: 6px 8px; border-radius: 5px; border: 1px solid #555; background: transparent; color: inherit; font: inherit; }
 .tag-pop .tp-new:focus { outline: none; border-color: var(--accent); }
 .tag-pop .tp-note { margin-top: 8px; font-size: 11px; color: #777; padding: 0 2px; }
+
+.n-tagdots, .ob-tagdots { display: inline-flex; gap: 3px; align-items: center; margin-left: 7px; flex: none; }
+.n-tagdots i, .ob-tagdots i { width: 7px; height: 7px; border-radius: 50%; display: block; }
+.nav-item .n-label + .n-tagdots { margin-right: auto; }
+.nav-item .n-fold + .n-label { margin-right: 0; }
+.tag-pop .tp-on.is-inherited { opacity: 0.75; cursor: default; border-style: dashed; border-color: #555; }
+.tag-pop .tp-on.is-inherited::after { content: ' ✓'; color: #888; }
+.tag-pop .tp-from { float: right; font-size: 11px; color: #888; margin-top: 2px; }
+.tag-pop .tp-colors { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 4px 0 8px 22px; }
+.tag-pop .tp-color { display: flex; align-items: center; gap: 7px; background: none; border: 1px solid transparent; border-radius: 5px; color: inherit; font: inherit; font-size: 12px; padding: 3px 6px; cursor: pointer; text-align: left; }
+.tag-pop .tp-color:hover { border-color: #555; }
+.tag-pop .tp-color.is-on { border-color: var(--accent); }
+.tag-pop .tp-color i { width: 12px; height: 12px; border-radius: 50%; display: block; flex: none; }
