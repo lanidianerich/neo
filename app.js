@@ -7671,7 +7671,7 @@ function switchTab(name) {
   dList.hidden = true;
   oList.hidden = true;
   // the outline's cards, their List/Cards switch and their hint belong to the Outline alone
-  for (const id of ['#outline-board', '#outline-views', '#outline-board-hint']) { const el = $(id); if (el) el.hidden = true; }
+  for (const id of ['#outline-board', '#outline-views', '#outline-board-hint', '#darling-views']) { const el = $(id); if (el) el.hidden = true; }
 
   if (name === 'darlings') {
     $('#aux-title').textContent = t('Darlings');
@@ -9884,9 +9884,42 @@ function flushSidecars() {
   }
 }
 
+// List or Cards for the Darlings tab, switched the way the Outline's is
+function darlingViewSwitch() {
+  let sw = $('#darling-views');
+  if (sw) return sw;
+  sw = document.createElement('div');
+  sw.id = 'darling-views';
+  sw.setAttribute('role', 'group');
+  sw.setAttribute('aria-label', t('Darlings view'));
+  for (const [value, label] of [['list', t('List')], ['cards', t('Cards')]]) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.view = value;
+    b.textContent = label;
+    b.onclick = () => {
+      if ((library.darlingView || 'list') === value) return;
+      library.darlingView = value;
+      writeLibrary(library);
+      renderDarlings();
+    };
+    sw.appendChild(b);
+  }
+  $('#aux-title').after(sw);
+  return sw;
+}
+
 function renderDarlings() {
   const wrap = $('#darlings-list');
   wrap.innerHTML = '';
+  const view = library.darlingView === 'cards' ? 'cards' : 'list';
+  const sw = darlingViewSwitch();
+  sw.hidden = darlings.length === 0;
+  for (const b of sw.querySelectorAll('button')) {
+    b.classList.toggle('on', b.dataset.view === view);
+    b.setAttribute('aria-pressed', b.dataset.view === view ? 'true' : 'false');
+  }
+  wrap.classList.toggle('as-cards', view === 'cards' && darlings.length > 0);
   if (darlings.length === 0) {
     wrap.innerHTML = `<div class="darlings-empty">${t('When a beautiful paragraph is gumming up the works, select it and drag it onto the Darlings tab below.')}<br>${t('It leaves your manuscript but it is never lost.')}</div>`;
     return;
@@ -9919,6 +9952,19 @@ function renderDarlings() {
     };
     el.appendChild(content);
     el.appendChild(meta);
+    if (view === 'cards') {
+      // a card shows the start of the passage; a click opens it, and closes it again
+      content.className = 'd-body';
+      el.tabIndex = 0;
+      el.setAttribute('aria-expanded', 'false');
+      const toggle = (e) => {
+        if (e.target.closest('button')) return;
+        const open = el.classList.toggle('open');
+        el.setAttribute('aria-expanded', open ? 'true' : 'false');
+      };
+      el.addEventListener('click', toggle);
+      el.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === el) toggle(e); });
+    }
     wrap.appendChild(el);
   }
 }
