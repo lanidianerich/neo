@@ -1212,6 +1212,11 @@ body.focus-mode .walk-note { opacity: 0.6; }
 .nav-scene .ns-text.empty { color: #5a5a5a; font-style: italic; }
 .nav-scene .ns-words { flex: none; font-size: 10.5px; color: #5d5d5d; }
 .nav-scene.dragging { opacity: 0.4; }
+/* Unassigned and Cut wait at the foot of the pane, set apart */
+.nav-item.kind-unassigned, .nav-item.kind-cut { border-top: 1px dashed #3a3a3a; margin-top: 10px; }
+.nav-item.kind-unassigned .n-label, .nav-item.kind-cut .n-label { font-size: 11px; letter-spacing: 1.6px; text-transform: uppercase; }
+.nav-item.kind-cut .n-row, .nav-item.kind-cut .nav-scene { opacity: 0.7; }
+.nav-item.kind-cut .n-words::before { content: 'not counted · '; }
 .nav-scene.editing { background: #303030; cursor: text; }
 .nav-scene .ns-text[contenteditable="true"] { display: block; color: #ddd; outline: none; -webkit-line-clamp: unset; overflow: visible; }
 .nav-scene .ns-text[contenteditable="true"]:empty::before { content: attr(data-ph); color: #666; font-style: italic; }
