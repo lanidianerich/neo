@@ -926,6 +926,30 @@ body.night #outline-board { --card: #e2ddd1; --card-head: #ebe7dd; }
 }
 body.light .ob-card { box-shadow: 0 0 0 1px #d9d3c4, 0 3px 8px rgba(60,50,30,0.12); }
 .ob-cell:focus-visible .ob-card { box-shadow: 0 0 0 2px var(--accent), 0 5px 12px rgba(0,0,0,0.3); }
+/* a chapter is a heading over its scenes, not a card among them */
+.ob-cell[data-kind="chapter"] { grid-column: 1 / -1; background: none; margin: 0; border-radius: 0; padding: calc(16px * var(--cz)) 6px 2px; }
+.ob-cell[data-kind="chapter"] .ob-chapter {
+  height: auto; background: none; box-shadow: none; border-radius: 0; overflow: visible; color: #cfc9bb;
+  flex-direction: row; align-items: baseline; gap: 14px; padding: 0 0 calc(5px * var(--cz));
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.ob-cell[data-kind="chapter"] .ob-head { flex: none; gap: 14px; }
+.ob-cell[data-kind="chapter"] .ob-chapter .ob-head { border-bottom: none; padding-bottom: 0; align-items: baseline; }
+.ob-cell[data-kind="chapter"] .ob-mark { color: var(--accent); }
+.ob-cell[data-kind="chapter"] .ob-words { color: var(--muted); margin-left: 0; padding-bottom: 0; }
+.ob-cell[data-kind="chapter"] .ob-text { flex: 1; display: block; white-space: nowrap; text-overflow: ellipsis; padding: 0; min-width: 0; }
+.ob-cell[data-kind="chapter"] .ob-text.empty { color: #7d7a72; }
+.ob-cell[data-kind="chapter"] .ob-plus { right: 0; top: calc(100% - 14px); }
+/* opened to write on, the heading becomes a card like the rest */
+.ob-cell[data-kind="chapter"].open .ob-chapter {
+  position: absolute; left: 6px; top: 6px; width: min(460px, calc(100% - 12px)); height: auto;
+  flex-direction: column; align-items: stretch; gap: 3px; padding: calc(7px * var(--cz)) calc(11px * var(--cz));
+  background: var(--card-head); color: var(--card-ink); border-bottom: none; border-radius: 3px;
+  box-shadow: 0 2px 0 rgba(0,0,0,0.4), 0 24px 48px rgba(0,0,0,0.55);
+}
+.ob-cell[data-kind="chapter"].open .ob-mark { color: var(--card-mark); }
+.ob-cell[data-kind="chapter"].open .ob-words { color: var(--card-soft); }
+.ob-cell[data-kind="chapter"].open .ob-text { white-space: normal; }
 .ob-chapter { background: var(--card-head); }
 .ob-head { display: flex; align-items: baseline; gap: 7px; min-height: 0; }
 .ob-chapter .ob-head { align-items: flex-end; border-bottom: 1px solid #e3b4ae; padding-bottom: 2px; }
@@ -992,6 +1016,8 @@ body.light .ob-card { box-shadow: 0 0 0 1px #d9d3c4, 0 3px 8px rgba(60,50,30,0.1
 #outline-board.tiles .ob-text { -webkit-line-clamp: 2; }
 #outline-board.tiles .ob-foot, #outline-board.tiles .ob-words { display: none; }
 #outline-board.tiles .ob-chapter .ob-head { border-bottom: none; }
+#outline-board.tiles .ob-cell[data-kind="chapter"] .ob-chapter { height: auto; padding: 0 0 4px; font-size: 13px; }
+#outline-board.tiles .ob-cell[data-kind="chapter"] .ob-mark { font-size: 20px; }
 #outline-board.tiles .ob-chapter .ob-text { display: none; }
 
 /* a card being written on lifts and grows */

@@ -7803,6 +7803,20 @@ function chapterSegments(chId) {
   return segs;
 }
 
+// The scenes the Cards view shows. A chapter that ends on a *** (or has two
+// in a row) leaves an empty piece between them: no words, no note, nothing
+// the writer made. It isn't a scene, so it gets no card. A new scene the
+// writer adds from a card has a note (a ghost on the page), so it stays.
+// `i` is the piece's place in chapterSegments, which the card carries.
+function visibleSegments(chId) {
+  const out = [];
+  chapterSegments(chId).forEach((seg, i) => {
+    if (!seg.id && !seg.words && !seg.flag) return;
+    out.push({ seg, i });
+  });
+  return out;
+}
+
 // the note a section has, if it has one
 const sectionNote = (chId, secId) => ((book.sectionNotes || {})[chId] || []).find((s) => s.id === secId) || null;
 
@@ -7974,14 +7988,13 @@ function renderBoard() {
     const kind = chapterKind(chId);
     if (kind === 'part') { board.appendChild(boardPartRow(chId)); continue; }
     if (!STORY_KINDS.includes(kind)) continue;
+    // the chapter is a heading, and its scenes (every piece between ***, the
+    // first too) are the cards beneath it
+    board.appendChild(chapterCard(chId, null, solo === chId));
     const segs = chapterSegments(chId);
-    const opening = segs[0] && !segs[0].id ? segs[0] : null;
-    const run = [chapterCard(chId, opening, solo === chId)];
+    const run = [];
     let letter = 0;
-    segs.forEach((seg, i) => {
-      if (seg === opening) return;
-      run.push(sectionCard(chId, seg, i, letter++));
-    });
+    visibleSegments(chId).forEach(({ seg, i }) => run.push(sectionCard(chId, seg, i, letter++)));
     // notes the page doesn't hold yet (written but emptied, or just made)
     const onPage = new Set(segs.map((s) => s.id).filter(Boolean));
     for (const sec of (book.sectionNotes || {})[chId] || []) {
@@ -8348,7 +8361,7 @@ function saveCard(cell, val) {
 // (and letters) again, without redrawing the board under the writer's hand
 function reindexChapterCards(chId) {
   const segs = chapterSegments(chId);
-  const placed = segs.filter((sg, i) => !(i === 0 && !sg.id));
+  const placed = visibleSegments(chId).map((v) => v.seg);
   const cells = [...outlineBoard().querySelectorAll(`.ob-cell[data-kind="section"][data-ch="${chId}"]`)];
   let k = 0;
   let letter = 0;
@@ -8491,7 +8504,7 @@ function makeNewCardAfter(cell, chId) {
   }
   const segs = chapterSegments(chId);
   let after;
-  if (cell.dataset.kind === 'chapter') after = segs[0] && !segs[0].id ? 0 : -1;
+  if (cell.dataset.kind === 'chapter') after = -1;
   else if (cell.dataset.virtual || Number(cell.dataset.seg) < 0) after = segs.length - 1;
   else after = Number(cell.dataset.seg);
   const fresh = sectionCard(chId, { id: null, ps: [], words: 0, first: '', flag: false }, -1, 0);
@@ -8501,13 +8514,15 @@ function makeNewCardAfter(cell, chId) {
   // it joins the chapter's mat
   cell.classList.remove('last');
   fresh.classList.add('last');
-  let spot = cell;
-  // a chapter card's new card goes before its first section
-  if (cell.dataset.kind === 'chapter') spot = cell;
-  spot.after(fresh);
+  // from the chapter's heading, the new card goes before its first scene
+  cell.after(fresh);
+  if (cell.dataset.kind === 'chapter') fresh.classList.add('first');
   // if it landed mid-chapter, it isn't the end of the mat
   const n = fresh.nextElementSibling;
-  if (n && n.classList.contains('ob-cell') && n.dataset.ch === chId) fresh.classList.remove('last');
+  if (n && n.classList.contains('ob-cell') && n.dataset.ch === chId && n.dataset.kind !== 'chapter') {
+    fresh.classList.remove('last');
+    if (cell.dataset.kind === 'chapter') n.classList.remove('first');
+  }
   return fresh;
 }
 
