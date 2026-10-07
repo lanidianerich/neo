@@ -917,6 +917,7 @@ body.night #outline-board { --card: #e2ddd1; --card-head: #ebe7dd; }
 .ob-cell.last { margin-right: 5px; padding-right: calc(8px * var(--cz)); border-radius: 0 10px 10px 0; }
 .ob-cell.first.last { border-radius: 10px; }
 .ob-card {
+  position: relative;
   height: calc(112px * var(--cz)); box-sizing: border-box; border-radius: 3px;
   background: var(--card); color: var(--card-ink);
   box-shadow: 0 1px 0 rgba(0,0,0,0.45), 0 5px 12px rgba(0,0,0,0.3);
@@ -2028,3 +2029,27 @@ body.night #paper.script #chapters { box-shadow: 0 4px 30px rgba(0,0,0,0.7); }
 #nav-pane.script .nav-item.sp-scene .n-row { justify-content: flex-start; gap: 8px; }
 #nav-pane.script .nav-item.sp-scene .n-words { margin-left: auto; }
 body.light #nav-pane.script .nav-item.sp-scene .n-num { color: #8f8a80; }
+
+
+/* tags: a colored line down the side of a scene's card and of its line in the pane */
+.ob-tags { position: absolute; left: 0; top: 0; bottom: 0; width: 5px; border-radius: 3px 0 0 3px; pointer-events: none; }
+.nav-scene { position: relative; }
+.nav-scene .ns-tags { position: absolute; left: -1px; top: 2px; bottom: 2px; width: 3px; border-radius: 2px; pointer-events: none; }
+.tag-pop {
+  position: fixed; z-index: 1000; width: 270px; padding: 10px; border-radius: 8px;
+  background: #262626; color: #ddd; border: 1px solid #444; box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+  font: 13px -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+}
+body.light .tag-pop { background: #fbfaf7; color: #2b2926; border-color: #d9d3c4; }
+.tag-pop .tp-head { font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase; color: #8a8a8a; padding: 2px 4px 8px; }
+.tag-pop .tp-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+.tag-pop .tp-dot { width: 14px; height: 14px; border-radius: 50%; border: none; padding: 0; cursor: pointer; flex: none; }
+.tag-pop .tp-on { flex: 1; text-align: left; background: none; border: 1px solid transparent; border-radius: 5px; color: inherit; padding: 4px 8px; cursor: pointer; font: inherit; }
+.tag-pop .tp-on:hover { border-color: #555; }
+.tag-pop .tp-on.is-on { background: rgba(201,168,106,0.16); border-color: var(--accent); }
+.tag-pop .tp-on.is-on::after { content: ' ✓'; color: var(--accent); }
+.tag-pop .tp-del { background: none; border: none; color: #777; font-size: 16px; cursor: pointer; padding: 0 4px; }
+.tag-pop .tp-del:hover { color: #c0654a; }
+.tag-pop .tp-new { width: 100%; box-sizing: border-box; margin-top: 8px; padding: 6px 8px; border-radius: 5px; border: 1px solid #555; background: transparent; color: inherit; font: inherit; }
+.tag-pop .tp-new:focus { outline: none; border-color: var(--accent); }
+.tag-pop .tp-note { margin-top: 8px; font-size: 11px; color: #777; padding: 0 2px; }

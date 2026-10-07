@@ -6893,6 +6893,8 @@ function navScenes(chId) {
     words.className = 'ns-words';
     words.textContent = seg.words ? fmtNum(seg.words) : '';
     row.append(letter, text, words);
+    const stripe = tagStripe(seg.id, 'ns-tags');
+    if (stripe) row.appendChild(stripe);
     pressable(row, t('Section {letter}', { letter: letter.textContent }) + '. ' + text.textContent);
     row.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); editNavScene(row); });
     row.addEventListener('contextmenu', (e) => {
@@ -6945,12 +6947,14 @@ async function navSceneMenu(row, x, y) {
   const here = chapterKind(chId);
   const choice = await popMenu(x, y, [
     { label: t('Go to the page'), value: 'go' },
+    { label: t('Tags…'), value: 'tags' },
     '-',
     { label: t('Move to Unassigned Scenes'), value: 'unassigned', disabled: here === 'unassigned' },
     { label: t('Move to Cut Scenes'), value: 'cut', disabled: here === 'cut' }
   ], { from: row });
   if (!choice) return;
   if (choice === 'go') { row.click(); return; }
+  if (choice === 'tags') { tagPicker(x, y, { ch: chId, seg: Number(row.dataset.seg), sec: row.dataset.sec || '' }); return; }
   closeCardEditor();
   const segIdx = Number(row.dataset.seg);
   const target = ensureSpecial(choice);
@@ -7718,6 +7722,180 @@ function switchTab(name) {
       toast(t('NEO couldn’t read this page from disk'));
     });
   }
+}
+
+/* ================================================================== */
+/*  TAGS                                                               */
+/*  The writer's own labels for scenes (Act I, a point of view, a       */
+/*  timeline), each with a color that runs down the side of the         */
+/*  scene's card in the Outline and its line in the Chapters pane.      */
+/*  They live in book.json (book.tags = { defs, by }) and are never     */
+/*  part of an export: only the writer sees them.                       */
+/* ================================================================== */
+
+const TAG_COLORS = ['#c0654a', '#d4a84b', '#6f9a5a', '#4f8fa8', '#8a6bb0', '#b85c8a', '#5f9c92', '#8c8c8c'];
+const bookTags = () => (book.tags = book.tags && Array.isArray(book.tags.defs) ? book.tags : { defs: [], by: {} });
+const tagDef = (id) => bookTags().defs.find((d) => d.id === id);
+// the tags a scene carries, by its note's id (the scene's id, once it has one)
+const sceneTagIds = (secId) => (secId && bookTags().by[secId] || []).filter((id) => tagDef(id));
+// a stripe for the side of a card: one color, or the colors stacked
+function tagStripeCss(ids) {
+  const cols = ids.map((id) => tagDef(id).color);
+  if (!cols.length) return '';
+  if (cols.length === 1) return cols[0];
+  const step = 100 / cols.length;
+  return 'linear-gradient(to bottom, ' + cols.map((c, i) => `${c} ${i * step}%, ${c} ${(i + 1) * step}%`).join(', ') + ')';
+}
+function tagStripe(secId, cls) {
+  const ids = sceneTagIds(secId);
+  if (!ids.length) return null;
+  const el = document.createElement('span');
+  el.className = cls;
+  el.style.background = tagStripeCss(ids);
+  el.title = ids.map((id) => tagDef(id).name).join(', ');
+  return el;
+}
+
+// a scene that has no note yet is given an (empty) one, so it has an id to carry its tags
+function ensureSectionId(chId, segIdx) {
+  const seg = chapterSegments(chId)[segIdx];
+  if (!seg) return null;
+  if (seg.id) return seg.id;
+  const anchor = seg.ps.find((p) => !p.classList.contains('ghost'));
+  if (!anchor) return null;
+  const sec = { id: newSectionId(), text: '' };
+  anchor.dataset.secId = sec.id;
+  book.sectionNotes = book.sectionNotes || {};
+  (book.sectionNotes[chId] = book.sectionNotes[chId] || []).push(sec);
+  orderSectionNotes(chId);
+  syncChapter(chapterBodyEl(chId), chId);
+  scheduleMetaSave();
+  return sec.id;
+}
+
+function tagsChanged() {
+  scheduleMetaSave();
+  renderNav();
+  if (currentTab === 'outline') renderOutline();
+}
+
+// The picker: every tag as a line to switch on or off for this scene, its
+// color (click to change), its name (click to rename), a × to remove it, and a
+// field to make a new one. `scene` is { ch, seg, sec }.
+function tagPicker(x, y, scene) {
+  document.querySelector('.tag-pop')?.remove();
+  const pop = document.createElement('div');
+  pop.className = 'tag-pop';
+  pop.setAttribute('role', 'dialog');
+  pop.setAttribute('aria-label', t('Tags'));
+  let secId = scene.sec || (Number.isInteger(scene.seg) && scene.seg >= 0 ? (chapterSegments(scene.ch)[scene.seg] || {}).id : '') || '';
+  const render = () => {
+    pop.innerHTML = '';
+    const head = document.createElement('div');
+    head.className = 'tp-head';
+    head.textContent = t('Tags · only you see these');
+    pop.appendChild(head);
+    const defs = bookTags().defs;
+    const have = new Set(sceneTagIds(secId));
+    for (const d of defs) {
+      const row = document.createElement('div');
+      row.className = 'tp-row';
+      const dot = document.createElement('button');
+      dot.type = 'button';
+      dot.className = 'tp-dot';
+      dot.style.background = d.color;
+      dot.title = t('Change color');
+      dot.onclick = () => {
+        d.color = TAG_COLORS[(TAG_COLORS.indexOf(d.color) + 1) % TAG_COLORS.length];
+        tagsChanged();
+        render();
+      };
+      const on = document.createElement('button');
+      on.type = 'button';
+      on.className = 'tp-on' + (have.has(d.id) ? ' is-on' : '');
+      on.setAttribute('role', 'checkbox');
+      on.setAttribute('aria-checked', have.has(d.id) ? 'true' : 'false');
+      on.textContent = d.name;
+      on.onclick = () => {
+        if (!secId) secId = ensureSectionId(scene.ch, scene.seg) || '';
+        if (!secId) return;
+        const by = bookTags().by;
+        const list = by[secId] || [];
+        by[secId] = have.has(d.id) ? list.filter((i) => i !== d.id) : [...list, d.id];
+        if (!by[secId].length) delete by[secId];
+        tagsChanged();
+        render();
+      };
+      on.addEventListener('dblclick', async () => {
+        const name = await askInput(t('Rename tag'), t('Tag name'), d.name);
+        if (name && name.trim()) { d.name = name.trim(); tagsChanged(); }
+        render();
+      });
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'tp-del';
+      del.textContent = '×';
+      del.title = t('Remove this tag from the book');
+      del.onclick = () => {
+        const tags = bookTags();
+        tags.defs = tags.defs.filter((x) => x.id !== d.id);
+        for (const k of Object.keys(tags.by)) {
+          tags.by[k] = tags.by[k].filter((i) => i !== d.id);
+          if (!tags.by[k].length) delete tags.by[k];
+        }
+        tagsChanged();
+        render();
+      };
+      row.append(dot, on, del);
+      pop.appendChild(row);
+    }
+    const make = document.createElement('input');
+    make.type = 'text';
+    make.className = 'tp-new';
+    make.placeholder = defs.length ? t('New tag…') : t('Name a tag, like Act I or Ness’s point of view');
+    make.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.isComposing || e.keyCode === 229) return;
+      if (e.key === 'Escape') { close(); return; }
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const name = make.value.trim();
+      if (!name) return;
+      const tags = bookTags();
+      const used = new Set(tags.defs.map((d) => d.color));
+      const color = TAG_COLORS.find((c) => !used.has(c)) || TAG_COLORS[tags.defs.length % TAG_COLORS.length];
+      const def = { id: 'tg-' + Date.now().toString(36), name, color };
+      tags.defs.push(def);
+      if (!secId) secId = ensureSectionId(scene.ch, scene.seg) || '';
+      if (secId) tags.by[secId] = [...(tags.by[secId] || []), def.id];
+      tagsChanged();
+      render();
+      pop.querySelector('.tp-new').focus();
+    });
+    pop.appendChild(make);
+    const note = document.createElement('div');
+    note.className = 'tp-note';
+    note.textContent = t('Double-click a name to rename it. Tags are never exported.');
+    pop.appendChild(note);
+  };
+  const close = () => {
+    pop.remove();
+    document.removeEventListener('mousedown', away, true);
+    document.removeEventListener('keydown', esc, true);
+  };
+  const away = (e) => { if (!pop.contains(e.target)) close(); };
+  const esc = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  render();
+  document.body.appendChild(pop);
+  const w = pop.offsetWidth;
+  const h = pop.offsetHeight;
+  pop.style.left = Math.max(4, Math.min(x, window.innerWidth - w - 4)) + 'px';
+  pop.style.top = (y + h > window.innerHeight - 4 ? Math.max(4, y - h) : y) + 'px';
+  setTimeout(() => {
+    document.addEventListener('mousedown', away, true);
+    document.addEventListener('keydown', esc, true);
+    pop.querySelector('.tp-new')?.focus();
+  }, 0);
 }
 
 /* ================================================================== */
@@ -8758,6 +8936,8 @@ function sectionCard(chId, seg, segIdx, letterIdx) {
   foot.className = 'ob-foot';
   foot.textContent = seg.words ? cardWords(seg.words) : t('not written yet');
   card.append(head, text, foot);
+  const stripe = tagStripe(seg.id, 'ob-tags');
+  if (stripe) card.appendChild(stripe);
   card.classList.toggle('unwritten', !seg.words);
   cell.dataset.written = seg.words ? '1' : '';
   cell.dataset.excerpt = seg.first ? quoted(seg.first) : '';
@@ -9201,12 +9381,14 @@ async function cardMenu(cell, x, y) {
   const written = !!cell.dataset.written;
   const choice = await popMenu(x, y, [
     { label: t('Go to the page'), value: 'go', disabled: !!cell.dataset.virtual },
+    { label: t('Tags…'), value: 'tags' },
     { label: t('Make it a chapter'), value: 'chapter', disabled: !!cell.dataset.virtual },
     { label: t('Move to loose cards'), value: 'loose', disabled: written || !linked },
     '-',
     { label: t('Delete the note'), value: 'delete', danger: true, disabled: !linked }
   ], { from: cell });
   if (choice === 'go') goToCard(cell);
+  else if (choice === 'tags') tagPicker(x, y, { ch: chId, seg: Number(cell.dataset.seg), sec: cell.dataset.sec || '' });
   else if (choice === 'chapter') sectionToChapter(chId, Number(cell.dataset.seg));
   else if (choice === 'loose') sectionToLoose(chId, Number(cell.dataset.seg));
   else if (choice === 'delete') {
